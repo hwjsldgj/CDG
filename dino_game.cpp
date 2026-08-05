@@ -9,17 +9,17 @@
 
 using namespace std;
 
-// ===== 常量 =====
+// ===== 常量（只缩放速度，恢复重力） =====
 const int SCREEN_WIDTH = 80;
 const int SCREEN_HEIGHT = 25;
 const int GROUND_Y = 10;
 const int DINO_X = 5;
 const int PLATFORM_WIDTH = 1;
-const int PLATFORM_SPEED = 1;        // 每帧左移像素
-const double GRAVITY = 0.2;
-const double JUMP_VEL_MIN = -0.775;
-const double JUMP_VEL_MAX = -1.7;
-const double MAX_HOLD_TIME = 0.2;    // 蓄力窗口（秒）
+const int PLATFORM_SPEED = 1;
+const double GRAVITY = 0.15;
+const double JUMP_VEL_MIN = -0.5425;
+const double JUMP_VEL_MAX = -0.77;
+const double MAX_HOLD_TIME = 0.2;
 const int MIN_GAP = 8;
 const int MAX_GAP = 40;
 const double COLLISION_DIST_THRESHOLD = 1.0;
@@ -31,7 +31,7 @@ long long score = 0;
 double dinoY = GROUND_Y;
 double dinoVy = 0.0;
 bool isJumping = false;
-double riseTime = 0.0;               // 蓄力累计时间（秒）
+double riseTime = 0.0;
 
 bool spacePressed = false;
 
@@ -127,17 +127,14 @@ void Update() {
     if (isJumping) {
         dinoVy += GRAVITY;
 
-        // 上升蓄力逻辑
         if (dinoVy < 0) {
-            // 按住空格且未超时
             if (spacePressed && riseTime < MAX_HOLD_TIME) {
-                riseTime += 1.0 / 60.0;   // 近似每帧增量
+                riseTime += 1.0 / 60.0;
                 if (riseTime > MAX_HOLD_TIME) riseTime = MAX_HOLD_TIME;
                 double ratio = riseTime / MAX_HOLD_TIME;
                 double targetVel = JUMP_VEL_MIN + (JUMP_VEL_MAX - JUMP_VEL_MIN) * ratio;
                 if (dinoVy > targetVel) dinoVy = targetVel;
             }
-            // 松开空格立刻清零蓄力，防止二次加速
             if (!spacePressed) {
                 riseTime = 0.0;
             }
@@ -152,11 +149,9 @@ void Update() {
             riseTime = 0.0;
         }
     } else {
-        // 地面蓄力归零
         riseTime = 0.0;
     }
 
-    // 障碍物移动（固定速度）
     for (int& x : platforms)
         x -= PLATFORM_SPEED;
 
@@ -173,7 +168,6 @@ void Update() {
         }
     }
 
-    // 碰撞检测（标准AABB）
     double dinoLeft = DINO_X;
     double dinoRight = DINO_X + 1.0;
     double dinoTop = dinoY - 1.0;
@@ -195,7 +189,7 @@ void Update() {
     ++score;
 }
 
-// ===== 输入处理 =====
+// ===== 输入 =====
 void UpdateInput() {
     if (!IsConsoleForeground()) {
         spacePressed = false;
@@ -285,7 +279,7 @@ int main() {
         Update();
         Draw();
 
-        Sleep(16); // 固定 ~60 FPS
+        Sleep(16);
     }
 
     return 0;
