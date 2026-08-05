@@ -16,7 +16,9 @@ const int SCREEN_HEIGHT = 25;
 const int GROUND_Y = 10;
 const int DINO_X = 5;
 const int PLATFORM_WIDTH = 1;
-const int PLATFORM_SPEED = 1;
+const double BASE_SPEED = 1.0;
+const double MAX_SPEED = 3.0;
+const double SPEED_PER_SCORE = 0.0002;   // 每1分增加的速度（线性系数）
 const double GRAVITY = 0.12;
 const double JUMP_VEL_MAX = -0.77;
 const int MIN_GAP = 8;
@@ -32,7 +34,7 @@ double dinoVy = 0.0;
 bool isJumping = false;
 bool spacePressed = false;
 
-vector<int> platforms;
+vector<double> platforms;
 
 HANDLE hBuffer[2];
 int currentFront = 0;
@@ -94,11 +96,12 @@ void Draw() {
     if (dinoRow >= 0 && dinoRow < SCREEN_HEIGHT)
         screen[dinoRow][DINO_X] = 'D';
 
-    for (int px : platforms) {
-        if (px >= 0 && px < SCREEN_WIDTH) {
-            screen[GROUND_Y][px] = '#';
+    for (double px : platforms) {
+        int col = (int)(px + 0.5);
+        if (col >= 0 && col < SCREEN_WIDTH) {
+            screen[GROUND_Y][col] = '#';
             if (GROUND_Y - 1 >= 0)
-                screen[GROUND_Y - 1][px] = '#';
+                screen[GROUND_Y - 1][col] = '#';
         }
     }
 
@@ -106,6 +109,13 @@ void Draw() {
     snprintf(scoreStr, sizeof(scoreStr), "Score: %lld", score);
     for (int i = 0; scoreStr[i] && i < SCREEN_WIDTH; ++i)
         screen[0][i] = scoreStr[i];
+
+    double currentSpeed = BASE_SPEED + score * SPEED_PER_SCORE;
+    if (currentSpeed > MAX_SPEED) currentSpeed = MAX_SPEED;
+    char speedStr[16];
+    snprintf(speedStr, sizeof(speedStr), "Spd:%.2f", currentSpeed);
+    for (int i = 0; speedStr[i] && i < SCREEN_WIDTH; ++i)
+        screen[1][i] = speedStr[i];
 
     DWORD bytesWritten;
     COORD writeCoord = { 0, 0 };
@@ -121,17 +131,18 @@ void Draw() {
 
 // ===== 更新（每帧） =====
 void Update() {
+    double currentSpeed = BASE_SPEED + score * SPEED_PER_SCORE;
+    if (currentSpeed > MAX_SPEED) currentSpeed = MAX_SPEED;
+
     if (isJumping) {
         if (dinoVy < 0) {
             if (spacePressed) {
-                // 长按：接近顶部时（dinoY < 5.0）采用与松开相同的减速
-                if (dinoY < 5.0) {
+                if (dinoY < 4.0) {
                     dinoVy += GRAVITY;
                 } else {
                     dinoVy = JUMP_VEL_MAX;
                 }
             } else {
-                // 松开：始终保持完整重力减速
                 dinoVy += GRAVITY;
             }
         } else {
@@ -152,9 +163,8 @@ void Update() {
         }
     }
 
-    // 障碍物移动
-    for (int& x : platforms)
-        x -= PLATFORM_SPEED;
+    for (double& x : platforms)
+        x -= currentSpeed;
 
     while (!platforms.empty() && platforms.front() + PLATFORM_WIDTH < 0)
         platforms.erase(platforms.begin());
@@ -162,20 +172,19 @@ void Update() {
     if (platforms.empty()) {
         platforms.push_back(SCREEN_WIDTH - PLATFORM_WIDTH);
     } else {
-        int lastX = platforms.back();
+        double lastX = platforms.back();
         if (lastX + PLATFORM_WIDTH < SCREEN_WIDTH - 10) {
             int gap = MIN_GAP + rand() % (MAX_GAP - MIN_GAP + 1);
             platforms.push_back(lastX + PLATFORM_WIDTH + gap);
         }
     }
 
-    // 碰撞检测（AABB）
     double dinoLeft = DINO_X;
     double dinoRight = DINO_X + 1.0;
     double dinoTop = dinoY - 1.0;
     double dinoBottom = dinoY;
 
-    for (int px : platforms) {
+    for (double px : platforms) {
         double platLeft = px;
         double platRight = px + PLATFORM_WIDTH;
         double platTop = GROUND_Y - 1.0;
