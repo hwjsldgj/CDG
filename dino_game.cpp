@@ -15,12 +15,12 @@ const int GROUND_Y = 10;
 const int DINO_X = 5;
 const int PLATFORM_WIDTH = 1;
 const int PLATFORM_SPEED = 1;
-const double GRAVITY = 0.5;                // 增大重力，缩短上升时间
+const double GRAVITY = 0.2;                // 重力进一步降低，跳跃更舒缓
 
-const double JUMP_VEL_MIN = -0.775;        // 最低速度
-const double JUMP_VEL_MAX = -2.6;          // 最大速度，对应最高点约第2行
+const double JUMP_VEL_MIN = -0.775;        // 最低速度（轻按）
+const double JUMP_VEL_MAX = -1.7;          // 最大速度 → 最高点约第2行
 const double MAX_HOLD_TIME = 0.5;          // 达到最大速度所需按住时间
-const double MAX_RISE_TIME = 3.0;  
+const double MAX_RISE_TIME = 4.0;          // 最大上升时间（秒），安全措施
 
 const int MIN_GAP = 8;
 const int MAX_GAP = 40;
@@ -119,10 +119,9 @@ void Draw() {
 
 void Update(double deltaTime) {
     if (isJumping) {
-        // 重力始终作用
         dinoVy += GRAVITY;
 
-        // 上升阶段计时
+        // 记录上升时间
         if (dinoVy < 0) {
             riseTime += deltaTime;
             if (riseTime > MAX_RISE_TIME) {
@@ -131,14 +130,15 @@ void Update(double deltaTime) {
             }
         }
 
-        // 按住空格且未达到最大速度时加速（仅上升阶段）
+        // 按住空格加速（仅上升阶段且未达最大速度）
         if (spacePressed && dinoVy < 0 && !maxReached && riseTime < MAX_RISE_TIME) {
             holdTime += deltaTime;
             if (holdTime > MAX_HOLD_TIME)
                 holdTime = MAX_HOLD_TIME;
             double ratio = holdTime / MAX_HOLD_TIME;
             double targetVel = JUMP_VEL_MIN + (JUMP_VEL_MAX - JUMP_VEL_MIN) * ratio;
-            dinoVy = targetVel;
+            if (dinoVy > targetVel)
+                dinoVy = targetVel;
             if (dinoVy <= JUMP_VEL_MAX) {
                 dinoVy = JUMP_VEL_MAX;
                 maxReached = true;
@@ -147,7 +147,6 @@ void Update(double deltaTime) {
 
         dinoY += dinoVy;
 
-        // 落地检测
         if (dinoY >= GROUND_Y) {
             dinoY = GROUND_Y;
             dinoVy = 0.0;
@@ -158,6 +157,7 @@ void Update(double deltaTime) {
         }
     }
 
+    // 障碍物移动
     for (int& x : platforms)
         x -= PLATFORM_SPEED;
 
@@ -175,6 +175,7 @@ void Update(double deltaTime) {
         }
     }
 
+    // 碰撞检测
     int dinoLeft = DINO_X;
     int dinoRight = DINO_X + 1;
     int dinoTop = (int)dinoY - 1;
@@ -215,6 +216,7 @@ void UpdateInput() {
             isJumping = true;
             holdTime = 0.0;
             maxReached = false;
+            riseTime = 0.0;
         }
     }
 
@@ -233,6 +235,7 @@ void ResetGame() {
     spacePressed = false;
     holdTime = 0.0;
     maxReached = false;
+    riseTime = 0.0;
     platforms.clear();
     platforms.push_back(SCREEN_WIDTH - PLATFORM_WIDTH + rand() % 20);
 }
