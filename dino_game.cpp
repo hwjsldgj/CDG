@@ -17,9 +17,10 @@ const int PLATFORM_WIDTH = 1;
 const int PLATFORM_SPEED = 1;
 const double GRAVITY = 0.15;
 
-const double JUMP_VEL_MIN = -0.775;
-const double JUMP_VEL_MAX = -0.80;
-const double BOOST_ACCEL = -0.13;
+// 跳跃速度范围（基于时间控制）
+const double JUMP_VEL_MIN = -0.775;   // 最低速度（上升2格）
+const double JUMP_VEL_MAX = -1.0;     // 最大速度（上升约3.3格，安全范围）
+const double MAX_HOLD_TIME = 0.5;     // 达到最大速度所需按住时间（秒）
 
 const int MIN_GAP = 8;
 const int MAX_GAP = 40;
@@ -32,6 +33,7 @@ double dinoY = GROUND_Y;
 double dinoVy = 0.0;
 bool isJumping = false;
 bool spacePressed = false;
+double holdTime = 0.0;   // 当前跳跃中按住空格累计时间
 
 vector<int> platforms;
 
@@ -115,13 +117,20 @@ void Draw() {
 
 void Update(double deltaTime) {
     if (isJumping) {
+        // 重力
         dinoVy += GRAVITY;
 
-        // 只在上升阶段且未达到最大速度时加速
-        if (spacePressed && dinoVy < 0 && dinoVy > JUMP_VEL_MAX) {
-            dinoVy += BOOST_ACCEL;
-            if (dinoVy < JUMP_VEL_MAX)
-                dinoVy = JUMP_VEL_MAX;
+        // 处理按住空格加速（仅在上升阶段且未达到最大时间）
+        if (spacePressed && dinoVy < 0) {
+            holdTime += deltaTime;
+            if (holdTime > MAX_HOLD_TIME)
+                holdTime = MAX_HOLD_TIME;
+            // 根据按住时间线性插值速度
+            double ratio = holdTime / MAX_HOLD_TIME;
+            double targetVel = JUMP_VEL_MIN + (JUMP_VEL_MAX - JUMP_VEL_MIN) * ratio;
+            // 仅当当前速度比目标速度更慢（即向上速度不够）时才调整
+            if (dinoVy > targetVel) // dinoVy 为负，目标更负，所以 > 表示向上速度不够
+                dinoVy = targetVel;
         }
 
         dinoY += dinoVy;
@@ -130,9 +139,11 @@ void Update(double deltaTime) {
             dinoY = GROUND_Y;
             dinoVy = 0.0;
             isJumping = false;
+            holdTime = 0.0;
         }
     }
 
+    // 障碍物移动
     for (int& x : platforms)
         x -= PLATFORM_SPEED;
 
@@ -150,6 +161,7 @@ void Update(double deltaTime) {
         }
     }
 
+    // 碰撞检测
     int dinoLeft = DINO_X;
     int dinoRight = DINO_X + 1;
     int dinoTop = (int)dinoY - 1;
@@ -186,8 +198,10 @@ void UpdateInput() {
 
     if (!isJumping && dinoY >= GROUND_Y) {
         if (isSpaceDown && !spacePressed) {
+            // 起跳，给予最低速度，并开始计时
             dinoVy = JUMP_VEL_MIN;
             isJumping = true;
+            holdTime = 0.0;
         }
     }
 
@@ -204,6 +218,7 @@ void ResetGame() {
     dinoVy = 0.0;
     isJumping = false;
     spacePressed = false;
+    holdTime = 0.0;
     platforms.clear();
     platforms.push_back(SCREEN_WIDTH - PLATFORM_WIDTH + rand() % 20);
 }
