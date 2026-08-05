@@ -14,13 +14,16 @@ const int SCREEN_HEIGHT = 25;
 const int GROUND_Y = 10;            // 地面行
 const int DINO_X = 5;               // 恐龙固定列
 const int PLATFORM_WIDTH = 1;       // 障碍物宽度（格）
-const int PLATFORM_GAP = 15;        // 间距（像素/列）
 const int PLATFORM_SPEED = 1;
 const double GRAVITY = 0.2;
 const double JUMP_SPEED = -1.8;
 
 const int DINO_HEIGHT = 2;
 const int OBSTACLE_HEIGHT = 2;
+
+// 随机间距范围
+const int MIN_GAP = 8;
+const int MAX_GAP = 25;
 
 bool gameOver = false;
 int score = 0;
@@ -139,13 +142,17 @@ void Update() {
     while (!platforms.empty() && platforms.front() + PLATFORM_WIDTH < 0)
         platforms.erase(platforms.begin());
 
-    // 生成新障碍物（等距）
+    // 生成新障碍物（随机间距）
     if (platforms.empty()) {
+        // 首个障碍物从右侧出现
         platforms.push_back(SCREEN_WIDTH - PLATFORM_WIDTH);
     } else {
         int lastX = platforms.back();
+        // 当最后一个障碍物完全出现在屏幕内且距离右边界足够远时，生成下一个
         if (lastX + PLATFORM_WIDTH < SCREEN_WIDTH - 10) {
-            int newX = lastX + PLATFORM_WIDTH + PLATFORM_GAP;
+            // 随机间距 [MIN_GAP, MAX_GAP]
+            int gap = MIN_GAP + rand() % (MAX_GAP - MIN_GAP + 1);
+            int newX = lastX + PLATFORM_WIDTH + gap;
             platforms.push_back(newX);
         }
     }
@@ -192,7 +199,8 @@ void ResetGame() {
     dinoVy = 0.0;
     isJumping = false;
     platforms.clear();
-    platforms.push_back(SCREEN_WIDTH - PLATFORM_WIDTH);
+    // 第一个障碍物随机出现在右侧较远处
+    platforms.push_back(SCREEN_WIDTH - PLATFORM_WIDTH + rand() % 20);
 }
 
 // ---------- 主循环 ----------
@@ -240,4 +248,4 @@ int main() {
     }
 
     return 0;
-} 
+}
