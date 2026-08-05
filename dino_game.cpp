@@ -5,51 +5,69 @@
 #include <cstdlib>
 #include <ctime>
 #include <cstring>
+#include <cmath>
 
 using namespace std;
 
-// ===== 参数配置 =====
+// ===== 常量配置 =====
 const int SCREEN_WIDTH = 80;
 const int SCREEN_HEIGHT = 25;
-const int GROUND_Y = 10;
-const int DINO_X = 5;
-const int PLATFORM_WIDTH = 1;
-const int PLATFORM_SPEED = 1;
-const double GRAVITY = 0.2;
-
-const double JUMP_VEL_MIN = -0.775;
-const double JUMP_VEL_MAX = -1.7;
-const double MAX_HOLD_TIME = 0.2;     // 加速窗口时间
-
+const int GROUND_Y = 10;            // 地面行（0-based）
+const int DINO_X = 5;               // 人物固定列
+const int PLATFORM_WIDTH = 1;       // 障碍物宽度（格）
+const int PLATFORM_SPEED = 1;       // 每帧左移像素
+const double GRAVITY = 0.2;         // 重力加速度
+const double JUMP_VEL_MIN = -0.775; // 最低起跳速度（轻按）
+const double JUMP_VEL_MAX = -1.7;   // 最大速度（按住0.2秒达到）
+const double MAX_HOLD_TIME = 0.2;   // 加速窗口时间（秒）
 const int MIN_GAP = 8;
 const int MAX_GAP = 40;
-const double COLLISION_DIST_THRESHOLD = 1.0;
+const double COLLISION_DIST_THRESHOLD = 1.0; // 水平碰撞阈值（格）
 
+// ===== 游戏状态 =====
 bool gameOver = false;
 int score = 0;
 
-double dinoY = GROUND_Y;
+// 人物物理
+double dinoY = GROUND_Y;            // 人物底部坐标（浮点）
 double dinoVy = 0.0;
 bool isJumping = false;
-bool spacePressed = false;
-double holdTime = 0.0;
-bool maxReached = false;
-double riseTime = 0.0;
+double riseTime = 0.0;              // 当前跳跃上升累计时间（秒）
 
+// 障碍物列表（存储每个障碍物左边缘x坐标）
 vector<int> platforms;
 
+// 输入状态
+bool spacePressed = false;
+
+// 双缓冲
 HANDLE hBuffer[2];
 int currentFront = 0;
 char screen[SCREEN_HEIGHT][SCREEN_WIDTH];
 
+// ===== 高精度计时器 =====
+LARGE_INTEGER freq;
+LARGE_INTEGER lastTime;
+
+double GetDeltaTime() {
+    LARGE_INTEGER current;
+    QueryPerformanceCounter(&current);
+    double dt = (double)(current.QuadPart - lastTime.QuadPart) / (double)freq.QuadPart;
+    lastTime = current;
+    return dt;
+}
+
+// ===== 控制台初始化 =====
 void InitConsole() {
     system("mode con cols=80 lines=25");
+    // 禁用快速编辑模式
     HANDLE hStdin = GetStdHandle(STD_INPUT_HANDLE);
     DWORD mode;
     GetConsoleMode(hStdin, &mode);
     mode &= ~ENABLE_QUICK_EDIT_MODE;
     SetConsoleMode(hStdin, mode);
 
+    // 创建两个屏幕缓冲区
     hBuffer[0] = CreateConsoleScreenBuffer(GENERIC_READ | GENERIC_WRITE, 0, NULL, CONSOLE_TEXTMODE_BUFFER, NULL);
     hBuffer[1] = CreateConsoleScreenBuffer(GENERIC_READ | GENERIC_WRITE, 0, NULL, CONSOLE_TEXTMODE_BUFFER, NULL);
 
@@ -70,86 +88,96 @@ void InitConsole() {
 
     SetConsoleActiveScreenBuffer(hBuffer[0]);
     currentFront = 0;
+
+    // 初始化计时器
+    QueryPerformanceFrequency(&freq);
+    QueryPerformanceCounter(&lastTime);
 }
 
+// ===== 绘制 =====
 void Draw() {
     int back = 1 - currentFront;
     HANDLE hBack = hBuffer[back];
 
-    for (int y = 0; y < SCREEN_HEIGHT; y++)
-        for (int x = 0; x < SCREEN_WIDTH; x++)
+    // 清空屏幕矩阵
+    for (int y = 0; y < SCREEN_HEIGHT; ++y)
+        for (int x = 0; x < SCREEN_WIDTH; ++x)
             screen[y][x] = ' ';
 
-    for (int x = 0; x < SCREEN_WIDTH; x++)
+    // 地面
+    for (int x = 0; x < SCREEN_WIDTH; ++x)
         screen[GROUND_Y][x] = '-';
 
-    int dinoRow = (int)dinoY;
+    // 人物（2格高）
+    int dinoRow = (int)(dinoY + 0.5); // 四舍五入
     int topRow = dinoRow - 1;
     if (topRow >= 0 && topRow < SCREEN_HEIGHT)
         screen[topRow][DINO_X] = 'D';
     if (dinoRow >= 0 && dinoRow < SCREEN_HEIGHT)
         screen[dinoRow][DINO_X] = 'D';
 
+    // 障碍物（2格高，1格宽）
     for (int px : platforms) {
-        int col = px;
-        if (col >= 0 && col < SCREEN_WIDTH) {
-            screen[GROUND_Y][col] = '#';
+        if (px >= 0 && px < SCREEN_WIDTH) {
+            screen[GROUND_Y][px] = '#';
             if (GROUND_Y - 1 >= 0)
-                screen[GROUND_Y - 1][col] = '#';
+                screen[GROUND_Y - 1][px] = '#';
         }
     }
 
+    // 分数
     char scoreStr[32];
-    sprintf_s(scoreStr, "Score: %d", score / 10);
-    for (int i = 0; i < (int)strlen(scoreStr) && i < SCREEN_WIDTH; i++)
+    snprintf(scoreStr, sizeof(scoreStr), "Score: %d", score / 10);
+    for (int i = 0; scoreStr[i] && i < SCREEN_WIDTH; ++i)
         screen[0][i] = scoreStr[i];
 
+    // 写入后台缓冲区
     DWORD bytesWritten;
     COORD writeCoord = { 0, 0 };
-    for (int y = 0; y < SCREEN_HEIGHT; y++) {
+    for (int y = 0; y < SCREEN_HEIGHT; ++y) {
         writeCoord.Y = y;
         writeCoord.X = 0;
         WriteConsoleOutputCharacterA(hBack, screen[y], SCREEN_WIDTH, writeCoord, &bytesWritten);
     }
 
+    // 切换缓冲区
     SetConsoleActiveScreenBuffer(hBack);
     currentFront = back;
 }
 
-void Update(double deltaTime) {
+// ===== 更新逻辑（使用真实deltaTime） =====
+void Update(double dt) {
     if (isJumping) {
-        dinoVy += GRAVITY;
+        // 重力
+        dinoVy += GRAVITY * dt;
 
-        // 记录上升时间，限制不超过窗口
+        // 上升阶段计时（仅当速度向上）
         if (dinoVy < 0) {
-            riseTime += deltaTime;
+            riseTime += dt;
             if (riseTime > MAX_HOLD_TIME)
                 riseTime = MAX_HOLD_TIME;
         }
 
-        // 加速条件：按住空格、上升中、上升时间小于窗口、且未达最大速度
-        if (spacePressed && dinoVy < 0 && riseTime < MAX_HOLD_TIME && !maxReached) {
-            holdTime += deltaTime;
-            if (holdTime > MAX_HOLD_TIME)
-                holdTime = MAX_HOLD_TIME;
-            double ratio = holdTime / MAX_HOLD_TIME;
+        // 加速：按住空格、上升中、且在加速窗口内、且未达到最大速度
+        if (spacePressed && dinoVy < 0 && riseTime < MAX_HOLD_TIME) {
+            double ratio = riseTime / MAX_HOLD_TIME; // 0~1
             double targetVel = JUMP_VEL_MIN + (JUMP_VEL_MAX - JUMP_VEL_MIN) * ratio;
+            // 只允许更快的速度（更负）
             if (dinoVy > targetVel)
                 dinoVy = targetVel;
-            if (dinoVy <= JUMP_VEL_MAX) {
+            // 防止超出最大速度
+            if (dinoVy < JUMP_VEL_MAX)
                 dinoVy = JUMP_VEL_MAX;
-                maxReached = true;
-            }
         }
 
-        dinoY += dinoVy;
+        // 更新位置
+        dinoY += dinoVy * dt;
 
+        // 落地检测
         if (dinoY >= GROUND_Y) {
             dinoY = GROUND_Y;
             dinoVy = 0.0;
             isJumping = false;
-            maxReached = false;
-            holdTime = 0.0;
             riseTime = 0.0;
         }
     }
@@ -158,61 +186,65 @@ void Update(double deltaTime) {
     for (int& x : platforms)
         x -= PLATFORM_SPEED;
 
+    // 移除移出左侧的障碍物
     while (!platforms.empty() && platforms.front() + PLATFORM_WIDTH < 0)
         platforms.erase(platforms.begin());
 
+    // 生成新障碍物（随机间距）
     if (platforms.empty()) {
         platforms.push_back(SCREEN_WIDTH - PLATFORM_WIDTH);
     } else {
         int lastX = platforms.back();
         if (lastX + PLATFORM_WIDTH < SCREEN_WIDTH - 10) {
             int gap = MIN_GAP + rand() % (MAX_GAP - MIN_GAP + 1);
-            int newX = lastX + PLATFORM_WIDTH + gap;
-            platforms.push_back(newX);
+            platforms.push_back(lastX + PLATFORM_WIDTH + gap);
         }
     }
 
-    // 碰撞检测
-    int dinoLeft = DINO_X;
-    int dinoRight = DINO_X + 1;
-    int dinoTop = (int)dinoY - 1;
-    int dinoBottom = (int)dinoY;
+    // 碰撞检测（使用浮点坐标）
+    // 人物矩形
+    double dinoLeft = DINO_X;
+    double dinoRight = DINO_X + 1.0;
+    double dinoTop = dinoY - 1.0;
+    double dinoBottom = dinoY;
 
     for (int px : platforms) {
-        int platLeft = px;
-        int platRight = px + PLATFORM_WIDTH;
-        int platTop = GROUND_Y - 1;
-        int platBottom = GROUND_Y;
+        double platLeft = px;
+        double platRight = px + PLATFORM_WIDTH;
+        double platTop = GROUND_Y - 1.0;
+        double platBottom = GROUND_Y;
 
-        bool verticalOverlap = (dinoTop < platBottom && dinoBottom > platTop);
-        if (!verticalOverlap) continue;
+        // 垂直重叠检测
+        if (!(dinoTop < platBottom && dinoBottom > platTop))
+            continue;
 
-        int horizontalDist = 0;
+        // 水平距离计算
+        double horizDist = 0.0;
         if (platRight <= dinoLeft)
-            horizontalDist = dinoLeft - platRight;
+            horizDist = dinoLeft - platRight;
         else if (platLeft >= dinoRight)
-            horizontalDist = platLeft - dinoRight;
-        else
-            horizontalDist = 0;
+            horizDist = platLeft - dinoRight;
+        // 否则重叠，距离为0
 
-        if (horizontalDist < COLLISION_DIST_THRESHOLD) {
+        if (horizDist < COLLISION_DIST_THRESHOLD) {
             gameOver = true;
             break;
         }
     }
 
+    // 分数递增（每帧加1，基于实际帧率，但为了简单保持原有逻辑）
     score++;
 }
 
+// ===== 输入处理 =====
 void UpdateInput() {
     bool isSpaceDown = (GetAsyncKeyState(VK_SPACE) & 0x8000) != 0;
 
+    // 仅在地面且未跳跃时响应起跳
     if (!isJumping && dinoY >= GROUND_Y) {
         if (isSpaceDown && !spacePressed) {
             dinoVy = JUMP_VEL_MIN;
             isJumping = true;
-            holdTime = 0.0;
-            maxReached = false;
             riseTime = 0.0;
         }
     }
@@ -223,6 +255,7 @@ void UpdateInput() {
         exit(0);
 }
 
+// ===== 重置游戏 =====
 void ResetGame() {
     gameOver = false;
     score = 0;
@@ -230,56 +263,67 @@ void ResetGame() {
     dinoVy = 0.0;
     isJumping = false;
     spacePressed = false;
-    holdTime = 0.0;
-    maxReached = false;
     riseTime = 0.0;
     platforms.clear();
     platforms.push_back(SCREEN_WIDTH - PLATFORM_WIDTH + rand() % 20);
 }
 
+// ===== 显示Game Over界面 =====
+void ShowGameOver() {
+    HANDLE hFront = hBuffer[currentFront];
+    DWORD written;
+    COORD topLeft = { 0, 0 };
+    FillConsoleOutputCharacterA(hFront, ' ', SCREEN_WIDTH * SCREEN_HEIGHT, topLeft, &written);
+    SetConsoleCursorPosition(hFront, { SCREEN_WIDTH / 2 - 6, SCREEN_HEIGHT / 2 });
+    WriteConsoleA(hFront, "GAME OVER!", 10, &written, NULL);
+    SetConsoleCursorPosition(hFront, { SCREEN_WIDTH / 2 - 8, SCREEN_HEIGHT / 2 + 1 });
+    char buf[32];
+    snprintf(buf, sizeof(buf), "Score: %d", score / 10);
+    WriteConsoleA(hFront, buf, strlen(buf), &written, NULL);
+    SetConsoleCursorPosition(hFront, { SCREEN_WIDTH / 2 - 10, SCREEN_HEIGHT / 2 + 2 });
+    WriteConsoleA(hFront, "Press 'r' to restart, ESC to exit", 34, &written, NULL);
+
+    while (true) {
+        if (_kbhit()) {
+            char ch = _getch();
+            if (ch == 'r') {
+                ResetGame();
+                Draw();
+                break;
+            } else if (ch == 27) {
+                exit(0);
+            }
+        }
+        Sleep(50);
+    }
+}
+
+// ===== 主循环 =====
 int main() {
     srand((unsigned)time(nullptr));
     InitConsole();
     ResetGame();
     Draw();
 
-    const double frameTime = 0.03;
-
     while (true) {
-        if (gameOver) {
-            HANDLE hFront = hBuffer[currentFront];
-            DWORD written;
-            COORD topLeft = { 0, 0 };
-            FillConsoleOutputCharacterA(hFront, ' ', SCREEN_WIDTH * SCREEN_HEIGHT, topLeft, &written);
-            SetConsoleCursorPosition(hFront, { SCREEN_WIDTH / 2 - 6, SCREEN_HEIGHT / 2 });
-            WriteConsoleA(hFront, "GAME OVER!", 10, &written, NULL);
-            SetConsoleCursorPosition(hFront, { SCREEN_WIDTH / 2 - 8, SCREEN_HEIGHT / 2 + 1 });
-            char buf[32];
-            sprintf_s(buf, "Score: %d", score / 10);
-            WriteConsoleA(hFront, buf, strlen(buf), &written, NULL);
-            SetConsoleCursorPosition(hFront, { SCREEN_WIDTH / 2 - 10, SCREEN_HEIGHT / 2 + 2 });
-            WriteConsoleA(hFront, "Press 'r' to restart, ESC to exit", 34, &written, NULL);
+        // 计算真实帧间隔
+        double dt = GetDeltaTime();
+        // 限制最大dt防止跳跃（例如窗口拖动时）
+        if (dt > 0.05) dt = 0.05;
 
-            while (true) {
-                if (_kbhit()) {
-                    char ch = _getch();
-                    if (ch == 'r') {
-                        ResetGame();
-                        Draw();
-                        break;
-                    } else if (ch == 27) {
-                        return 0;
-                    }
-                }
-                Sleep(50);
-            }
+        UpdateInput();
+
+        if (gameOver) {
+            ShowGameOver();
             continue;
         }
 
-        UpdateInput();
-        Update(frameTime);
+        Update(dt);
         Draw();
-        Sleep((DWORD)(frameTime * 1000));
+
+        // 无需固定Sleep，由高精度计时器控制速度
+        // 为了降低CPU占用，可短暂Sleep(1)让出时间片
+        Sleep(1);
     }
 
     return 0;
