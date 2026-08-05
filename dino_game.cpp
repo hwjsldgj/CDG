@@ -9,14 +9,14 @@
 #include <ctime>
 #include <fstream>
 #include <sstream>
+#include <vector>
 
 using namespace std;
 
 // ======================================================================
-// 游戏配置结构体（对应 config.ini 所有参数，并提供默认值）
+// 游戏配置结构体
 // ======================================================================
 struct GameConfig {
-    // ---------- 功能开关 ----------
     bool ENABLE_BOOST = true;
     bool ENABLE_LINEAR_SPEED = true;
     bool ENABLE_HOLD_JUMP = true;
@@ -24,14 +24,12 @@ struct GameConfig {
     bool ENABLE_COLLISION = true;
     bool ENABLE_SCORING = true;
 
-    // ---------- 屏幕与布局 ----------
     int SCREEN_WIDTH = 80;
     int SCREEN_HEIGHT = 25;
     int GROUND_Y = 10;
     int DINO_X = 5;
     int PLATFORM_WIDTH = 1;
 
-    // ---------- 物理与速度 ----------
     double BASE_SPEED = 0.5;
     double MAX_SPEED = 1.5;
     double SPEED_PER_SCORE = 0.0004;
@@ -41,31 +39,32 @@ struct GameConfig {
     int MAX_GAP = 40;
     double COLLISION_DIST_THRESHOLD = 1.0;
 
-    // ---------- 速度倍增 ----------
     double BOOST_INTERVAL = 20.0;
     double BOOST_FACTOR = 1.15;
     double INITIAL_BOOST_TIME = 20.0;
 
-    // ---------- 时间与帧率 ----------
     double PHYSICS_DT = 1.0 / 60.0;
     double TARGET_FPS = 120.0;
     double SCORE_INTERVAL = 0.1;
 
-    // ---------- 跳跃钳位 ----------
     double JUMP_TOP_CLAMP = 4.0;
     double JUMP_BOTTOM_CLAMP = 2.0;
 
-    // ---------- 障碍物生成 ----------
     double GENERATE_THRESHOLD = 10.0;
     double INITIAL_PLATFORM_OFFSET = 5.0;
+
+    int MAX_PLATFORMS = 200;
 };
 
 // ======================================================================
-// 游戏状态结构体（所有运行时变量）
+// 游戏状态结构体
 // ======================================================================
 struct GameState {
+    enum GameMode { MENU, PLAYING, GAMEOVER } gameMode = MENU;
+
     bool gameOver = false;
     long long score = 0;
+    long long highScore = 0;
 
     double dinoY;
     double dinoVy = 0.0;
@@ -83,8 +82,24 @@ struct GameState {
     double speedMultiplier = 1.0;
     double nextBoostTime;
 
-    // 外部控制预留（未来可通过网络修改）
-    // void* externalData; // 可扩展
+    struct HistoryEntry {
+        time_t timestamp;
+        long long score;
+        double speed;
+        double dinoY;
+    };
+    vector<HistoryEntry> history;
+
+    struct ReplayFrame {
+        double time;
+        double dinoY;
+        double dinoVy;
+        deque<double> platforms;
+    };
+    vector<ReplayFrame> replayFrames;
+    bool isRecording = false;
+    bool isPlaying = false;
+    size_t playbackIndex = 0;
 };
 
 // ======================================================================
@@ -94,8 +109,35 @@ GameConfig g_config;
 GameState g_state;
 
 // ======================================================================
-// 函数：LoadConfig
-// 描述：从 config.ini 读取配置，覆盖 g_config 默认值
+// 健壮性辅助函数（兼容 C++11）
+// ======================================================================
+int SafeParseInt(const string& val, int defaultVal) {
+    try {
+        int v = stoi(val);
+        if (v < 0) return defaultVal;
+        return v;
+    } catch (...) {
+        return defaultVal;
+    }
+}
+
+double SafeParseDouble(const string& val, double defaultVal) {
+    try {
+        double v = stod(val);
+        if (v < 0) return defaultVal;
+        return v;
+    } catch (...) {
+        return defaultVal;
+    }
+}
+
+// ======================================================================
+// 前向声明（解决调用顺序问题）
+// ======================================================================
+void ResetGame();
+
+// ======================================================================
+// 加载配置
 // ======================================================================
 void LoadConfig(const char* filename = "config.ini") {
     ifstream file(filename);
@@ -113,72 +155,65 @@ void LoadConfig(const char* filename = "config.ini") {
         val.erase(0, val.find_first_not_of(" \t"));
         val.erase(val.find_last_not_of(" \t") + 1);
 
-        // 配置覆盖
-        if (key == "ENABLE_BOOST") g_config.ENABLE_BOOST = (stoi(val) != 0);
-        else if (key == "ENABLE_LINEAR_SPEED") g_config.ENABLE_LINEAR_SPEED = (stoi(val) != 0);
-        else if (key == "ENABLE_HOLD_JUMP") g_config.ENABLE_HOLD_JUMP = (stoi(val) != 0);
-        else if (key == "ENABLE_OBSTACLES") g_config.ENABLE_OBSTACLES = (stoi(val) != 0);
-        else if (key == "ENABLE_COLLISION") g_config.ENABLE_COLLISION = (stoi(val) != 0);
-        else if (key == "ENABLE_SCORING") g_config.ENABLE_SCORING = (stoi(val) != 0);
-        else if (key == "SCREEN_WIDTH") g_config.SCREEN_WIDTH = stoi(val);
-        else if (key == "SCREEN_HEIGHT") g_config.SCREEN_HEIGHT = stoi(val);
-        else if (key == "GROUND_Y") g_config.GROUND_Y = stoi(val);
-        else if (key == "DINO_X") g_config.DINO_X = stoi(val);
-        else if (key == "PLATFORM_WIDTH") g_config.PLATFORM_WIDTH = stoi(val);
-        else if (key == "BASE_SPEED") g_config.BASE_SPEED = stod(val);
-        else if (key == "MAX_SPEED") g_config.MAX_SPEED = stod(val);
-        else if (key == "SPEED_PER_SCORE") g_config.SPEED_PER_SCORE = stod(val);
-        else if (key == "GRAVITY") g_config.GRAVITY = stod(val);
-        else if (key == "JUMP_VEL_MAX") g_config.JUMP_VEL_MAX = stod(val);
-        else if (key == "MIN_GAP") g_config.MIN_GAP = stoi(val);
-        else if (key == "MAX_GAP") g_config.MAX_GAP = stoi(val);
-        else if (key == "COLLISION_DIST_THRESHOLD") g_config.COLLISION_DIST_THRESHOLD = stod(val);
-        else if (key == "BOOST_INTERVAL") g_config.BOOST_INTERVAL = stod(val);
-        else if (key == "BOOST_FACTOR") g_config.BOOST_FACTOR = stod(val);
-        else if (key == "INITIAL_BOOST_TIME") g_config.INITIAL_BOOST_TIME = stod(val);
-        else if (key == "PHYSICS_DT") g_config.PHYSICS_DT = stod(val);
-        else if (key == "TARGET_FPS") g_config.TARGET_FPS = stod(val);
-        else if (key == "SCORE_INTERVAL") g_config.SCORE_INTERVAL = stod(val);
-        else if (key == "JUMP_TOP_CLAMP") g_config.JUMP_TOP_CLAMP = stod(val);
-        else if (key == "JUMP_BOTTOM_CLAMP") g_config.JUMP_BOTTOM_CLAMP = stod(val);
-        else if (key == "GENERATE_THRESHOLD") g_config.GENERATE_THRESHOLD = stod(val);
-        else if (key == "INITIAL_PLATFORM_OFFSET") g_config.INITIAL_PLATFORM_OFFSET = stod(val);
+        if (key == "ENABLE_BOOST") g_config.ENABLE_BOOST = (SafeParseInt(val, 1) != 0);
+        else if (key == "ENABLE_LINEAR_SPEED") g_config.ENABLE_LINEAR_SPEED = (SafeParseInt(val, 1) != 0);
+        else if (key == "ENABLE_HOLD_JUMP") g_config.ENABLE_HOLD_JUMP = (SafeParseInt(val, 1) != 0);
+        else if (key == "ENABLE_OBSTACLES") g_config.ENABLE_OBSTACLES = (SafeParseInt(val, 1) != 0);
+        else if (key == "ENABLE_COLLISION") g_config.ENABLE_COLLISION = (SafeParseInt(val, 1) != 0);
+        else if (key == "ENABLE_SCORING") g_config.ENABLE_SCORING = (SafeParseInt(val, 1) != 0);
+        else if (key == "SCREEN_WIDTH") g_config.SCREEN_WIDTH = SafeParseInt(val, 80);
+        else if (key == "SCREEN_HEIGHT") g_config.SCREEN_HEIGHT = SafeParseInt(val, 25);
+        else if (key == "GROUND_Y") g_config.GROUND_Y = SafeParseInt(val, 10);
+        else if (key == "DINO_X") g_config.DINO_X = SafeParseInt(val, 5);
+        else if (key == "PLATFORM_WIDTH") g_config.PLATFORM_WIDTH = SafeParseInt(val, 1);
+        else if (key == "BASE_SPEED") g_config.BASE_SPEED = SafeParseDouble(val, 0.5);
+        else if (key == "MAX_SPEED") g_config.MAX_SPEED = SafeParseDouble(val, 1.5);
+        else if (key == "SPEED_PER_SCORE") g_config.SPEED_PER_SCORE = SafeParseDouble(val, 0.0004);
+        else if (key == "GRAVITY") g_config.GRAVITY = SafeParseDouble(val, 0.05);
+        else if (key == "JUMP_VEL_MAX") g_config.JUMP_VEL_MAX = SafeParseDouble(val, -0.42);
+        else if (key == "MIN_GAP") g_config.MIN_GAP = SafeParseInt(val, 8);
+        else if (key == "MAX_GAP") g_config.MAX_GAP = SafeParseInt(val, 40);
+        else if (key == "COLLISION_DIST_THRESHOLD") g_config.COLLISION_DIST_THRESHOLD = SafeParseDouble(val, 1.0);
+        else if (key == "BOOST_INTERVAL") g_config.BOOST_INTERVAL = SafeParseDouble(val, 20.0);
+        else if (key == "BOOST_FACTOR") g_config.BOOST_FACTOR = SafeParseDouble(val, 1.15);
+        else if (key == "INITIAL_BOOST_TIME") g_config.INITIAL_BOOST_TIME = SafeParseDouble(val, 20.0);
+        else if (key == "PHYSICS_DT") g_config.PHYSICS_DT = SafeParseDouble(val, 1.0/60.0);
+        else if (key == "TARGET_FPS") g_config.TARGET_FPS = SafeParseDouble(val, 120.0);
+        else if (key == "SCORE_INTERVAL") g_config.SCORE_INTERVAL = SafeParseDouble(val, 0.1);
+        else if (key == "JUMP_TOP_CLAMP") g_config.JUMP_TOP_CLAMP = SafeParseDouble(val, 4.0);
+        else if (key == "JUMP_BOTTOM_CLAMP") g_config.JUMP_BOTTOM_CLAMP = SafeParseDouble(val, 2.0);
+        else if (key == "GENERATE_THRESHOLD") g_config.GENERATE_THRESHOLD = SafeParseDouble(val, 10.0);
+        else if (key == "INITIAL_PLATFORM_OFFSET") g_config.INITIAL_PLATFORM_OFFSET = SafeParseDouble(val, 5.0);
+        else if (key == "MAX_PLATFORMS") g_config.MAX_PLATFORMS = SafeParseInt(val, 200);
     }
     file.close();
 }
 
 // ======================================================================
-// 外部控制接口（占位，供未来网页/开发者工具调用）
+// 新功能框架（占位函数）
 // ======================================================================
-/**
- * 设置游戏参数（可用于实时调整难度、开关等）
- * @param key 参数名（与 config.ini 或状态名对应）
- * @param value 新值（字符串形式，自动转换）
- */
-void ExternalSetParam(const string& key, const string& value) {
-    // 示例：未来可通过网络调用此函数
-    // 目前仅作占位，可在此添加对 g_config 或 g_state 的修改
-    // 例如：if (key == "BASE_SPEED") g_config.BASE_SPEED = stod(value);
-    // 注意：修改后可能需立即生效，需配合游戏循环更新
+void UpdateHighScore() {
+    if (g_state.score > g_state.highScore) {
+        g_state.highScore = g_state.score;
+    }
 }
 
-/**
- * 获取当前游戏状态（用于网页可视化）
- * 返回 JSON 字符串，便于前端解析
- */
-string ExternalGetStateJSON() {
-    // 占位，未来可返回 g_state 的序列化数据
-    return "{}";
+void HandleMenuInput() {
+    // 占位
 }
+
+void SaveHistory() { /* 占位 */ }
+void LoadHistory() { /* 占位 */ }
+void StartRecording() { g_state.isRecording = true; g_state.replayFrames.clear(); }
+void StopRecording() { g_state.isRecording = false; }
+void Playback() { g_state.isPlaying = true; g_state.playbackIndex = 0; }
+
+void ExternalSetParam(const string& key, const string& value) { /* 占位 */ }
+string ExternalGetStateJSON() { return "{}"; }
 
 // ======================================================================
 // 控制台窗口管理
 // ======================================================================
-
-/**
- * 强制重置控制台缓冲区大小和窗口区域，消除滚动条和错位
- * @param hConsole 控制台缓冲区句柄
- */
 void ResetConsoleWindow(HANDLE hConsole) {
     COORD bufferSize = { (SHORT)g_config.SCREEN_WIDTH, (SHORT)g_config.SCREEN_HEIGHT };
     SetConsoleScreenBufferSize(hConsole, bufferSize);
@@ -186,9 +221,6 @@ void ResetConsoleWindow(HANDLE hConsole) {
     SetConsoleWindowInfo(hConsole, TRUE, &windowRect);
 }
 
-/**
- * 检查并修复缓冲区尺寸，若不符则调用 ResetConsoleWindow
- */
 void EnsureBufferSize(HANDLE hConsole) {
     CONSOLE_SCREEN_BUFFER_INFO csbi;
     if (!GetConsoleScreenBufferInfo(hConsole, &csbi)) return;
@@ -215,6 +247,10 @@ void InitConsole() {
 
     g_state.hBuffer[0] = CreateConsoleScreenBuffer(GENERIC_READ | GENERIC_WRITE, 0, NULL, CONSOLE_TEXTMODE_BUFFER, NULL);
     g_state.hBuffer[1] = CreateConsoleScreenBuffer(GENERIC_READ | GENERIC_WRITE, 0, NULL, CONSOLE_TEXTMODE_BUFFER, NULL);
+    if (g_state.hBuffer[0] == INVALID_HANDLE_VALUE || g_state.hBuffer[1] == INVALID_HANDLE_VALUE) {
+        cerr << "创建控制台缓冲区失败！" << endl;
+        exit(1);
+    }
 
     ResetConsoleWindow(g_state.hBuffer[0]);
     ResetConsoleWindow(g_state.hBuffer[1]);
@@ -232,9 +268,14 @@ void InitConsole() {
     QueryPerformanceFrequency(&g_state.freq);
     QueryPerformanceCounter(&g_state.lastScoreTime);
 
-    g_state.screen = new char*[g_config.SCREEN_HEIGHT];
-    for (int i = 0; i < g_config.SCREEN_HEIGHT; ++i)
-        g_state.screen[i] = new char[g_config.SCREEN_WIDTH];
+    try {
+        g_state.screen = new char*[g_config.SCREEN_HEIGHT];
+        for (int i = 0; i < g_config.SCREEN_HEIGHT; ++i)
+            g_state.screen[i] = new char[g_config.SCREEN_WIDTH];
+    } catch (bad_alloc&) {
+        cerr << "内存分配失败！" << endl;
+        exit(1);
+    }
 }
 
 bool IsConsoleForeground() {
@@ -304,7 +345,6 @@ void Update() {
     currentSpeed *= g_state.speedMultiplier;
     if (currentSpeed > g_config.MAX_SPEED) currentSpeed = g_config.MAX_SPEED;
 
-    // 速度倍增
     static double currentTime = 0.0;
     static LARGE_INTEGER lastTime = {0};
     LARGE_INTEGER now;
@@ -325,7 +365,6 @@ void Update() {
         g_state.nextBoostTime += g_config.BOOST_INTERVAL;
     }
 
-    // 跳跃物理
     if (g_state.isJumping) {
         if (g_state.dinoVy < 0) {
             if (g_config.ENABLE_HOLD_JUMP && g_state.spacePressed) {
@@ -355,7 +394,6 @@ void Update() {
         }
     }
 
-    // 障碍物移动与生成
     if (g_config.ENABLE_OBSTACLES) {
         for (double& x : g_state.platforms)
             x -= currentSpeed;
@@ -364,18 +402,19 @@ void Update() {
             g_state.platforms.pop_front();
         }
 
-        if (g_state.platforms.empty()) {
-            g_state.platforms.push_back(g_config.SCREEN_WIDTH - g_config.PLATFORM_WIDTH);
-        } else {
-            double lastX = g_state.platforms.back();
-            if (lastX + g_config.PLATFORM_WIDTH < g_config.SCREEN_WIDTH - g_config.GENERATE_THRESHOLD) {
-                int gap = g_config.MIN_GAP + rand() % (g_config.MAX_GAP - g_config.MIN_GAP + 1);
-                g_state.platforms.push_back(lastX + g_config.PLATFORM_WIDTH + gap);
+        if (g_state.platforms.size() < (size_t)g_config.MAX_PLATFORMS) {
+            if (g_state.platforms.empty()) {
+                g_state.platforms.push_back(g_config.SCREEN_WIDTH - g_config.PLATFORM_WIDTH);
+            } else {
+                double lastX = g_state.platforms.back();
+                if (lastX + g_config.PLATFORM_WIDTH < g_config.SCREEN_WIDTH - g_config.GENERATE_THRESHOLD) {
+                    int gap = g_config.MIN_GAP + rand() % (g_config.MAX_GAP - g_config.MIN_GAP + 1);
+                    g_state.platforms.push_back(lastX + g_config.PLATFORM_WIDTH + gap);
+                }
             }
         }
     }
 
-    // 碰撞检测
     if (g_config.ENABLE_COLLISION && g_config.ENABLE_OBSTACLES) {
         double dinoLeft = g_config.DINO_X;
         double dinoRight = g_config.DINO_X + 1.0;
@@ -391,6 +430,7 @@ void Update() {
             if (dinoLeft < platRight && dinoRight > platLeft &&
                 dinoTop < platBottom && dinoBottom > platTop) {
                 g_state.gameOver = true;
+                UpdateHighScore();
                 break;
             }
         }
@@ -408,14 +448,24 @@ void UpdateInput() {
 
     bool isSpaceDown = (GetAsyncKeyState(VK_SPACE) & 0x8000) != 0;
 
-    if (!g_state.isJumping && g_state.dinoY >= g_config.GROUND_Y) {
-        if (isSpaceDown && !g_state.spacePressed) {
-            g_state.dinoVy = g_config.JUMP_VEL_MAX;
-            g_state.isJumping = true;
+    if (g_state.gameMode == GameState::MENU) {
+        HandleMenuInput();
+        if (GetAsyncKeyState(VK_RETURN) & 0x8000) {
+            g_state.gameMode = GameState::PLAYING;
+            ResetGame();
         }
+        return;
     }
 
-    g_state.spacePressed = isSpaceDown;
+    if (g_state.gameMode == GameState::PLAYING) {
+        if (!g_state.isJumping && g_state.dinoY >= g_config.GROUND_Y) {
+            if (isSpaceDown && !g_state.spacePressed) {
+                g_state.dinoVy = g_config.JUMP_VEL_MAX;
+                g_state.isJumping = true;
+            }
+        }
+        g_state.spacePressed = isSpaceDown;
+    }
 
     if (GetAsyncKeyState(VK_ESCAPE) & 0x8000) {
         CloseHandle(g_state.hBuffer[0]);
@@ -429,6 +479,10 @@ void UpdateInput() {
 // 游戏重置
 // ======================================================================
 void ResetGame() {
+    if (g_state.gameOver) {
+        UpdateHighScore();
+    }
+
     g_state.gameOver = false;
     g_state.score = 0;
     g_state.dinoY = g_config.GROUND_Y;
@@ -442,6 +496,9 @@ void ResetGame() {
     QueryPerformanceCounter(&g_state.lastScoreTime);
     static LARGE_INTEGER lastTime = {0};
     lastTime.QuadPart = 0;
+    if (g_state.gameMode == GameState::MENU) {
+        g_state.gameMode = GameState::PLAYING;
+    }
 }
 
 // ======================================================================
@@ -465,8 +522,8 @@ void ShowGameOver() {
             titleCols += 1;
     }
 
-    wchar_t scoreBuf[32];
-    swprintf(scoreBuf, 32, L"得分：%lld", g_state.score);
+    wchar_t scoreBuf[64];
+    swprintf(scoreBuf, 64, L"得分：%lld", g_state.score);
     int scoreLen = wcslen(scoreBuf);
     int scoreCols = 0;
     for (int i = 0; i < scoreLen; ++i) {
@@ -474,6 +531,17 @@ void ShowGameOver() {
             scoreCols += 2;
         else
             scoreCols += 1;
+    }
+
+    wchar_t highScoreBuf[64];
+    swprintf(highScoreBuf, 64, L"最高分：%lld", g_state.highScore);
+    int highScoreLen = wcslen(highScoreBuf);
+    int highScoreCols = 0;
+    for (int i = 0; i < highScoreLen; ++i) {
+        if (highScoreBuf[i] >= 0x4E00 && highScoreBuf[i] <= 0x9FA5)
+            highScoreCols += 2;
+        else
+            highScoreCols += 1;
     }
 
     const wchar_t* restartMsg = L"按 R 键重新开始，ESC 键退出";
@@ -486,7 +554,7 @@ void ShowGameOver() {
             msgCols += 1;
     }
 
-    int centerY = g_config.SCREEN_HEIGHT / 2 - 1;
+    int centerY = g_config.SCREEN_HEIGHT / 2 - 2;
 
     SetConsoleCursorPosition(hFront, { (SHORT)((g_config.SCREEN_WIDTH - titleCols) / 2), (SHORT)centerY });
     WriteConsoleW(hFront, title, titleLen, &written, NULL);
@@ -494,7 +562,10 @@ void ShowGameOver() {
     SetConsoleCursorPosition(hFront, { (SHORT)((g_config.SCREEN_WIDTH - scoreCols) / 2), (SHORT)(centerY + 1) });
     WriteConsoleW(hFront, scoreBuf, scoreLen, &written, NULL);
 
-    SetConsoleCursorPosition(hFront, { (SHORT)((g_config.SCREEN_WIDTH - msgCols) / 2), (SHORT)(centerY + 2) });
+    SetConsoleCursorPosition(hFront, { (SHORT)((g_config.SCREEN_WIDTH - highScoreCols) / 2), (SHORT)(centerY + 2) });
+    WriteConsoleW(hFront, highScoreBuf, highScoreLen, &written, NULL);
+
+    SetConsoleCursorPosition(hFront, { (SHORT)((g_config.SCREEN_WIDTH - msgCols) / 2), (SHORT)(centerY + 3) });
     WriteConsoleW(hFront, restartMsg, msgLen, &written, NULL);
 
     while (true) {
@@ -523,9 +594,13 @@ int main() {
     LoadConfig();
     g_state.dinoY = g_config.GROUND_Y;
     g_state.nextBoostTime = g_config.INITIAL_BOOST_TIME;
+    g_state.highScore = 0;
 
     srand((unsigned)time(nullptr));
     InitConsole();
+
+    // 默认进入菜单（为了演示，直接进入游戏）
+    g_state.gameMode = GameState::PLAYING;
     ResetGame();
     Draw();
 
@@ -535,6 +610,11 @@ int main() {
 
     while (true) {
         UpdateInput();
+
+        if (g_state.gameMode == GameState::MENU) {
+            // 菜单占位
+            continue;
+        }
 
         if (g_state.gameOver) {
             ShowGameOver();
