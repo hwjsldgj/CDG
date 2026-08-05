@@ -34,7 +34,7 @@ double dinoVy = 0.0;
 bool isJumping = false;
 bool spacePressed = false;
 
-deque<double> platforms;   // 使用 double 存储坐标
+deque<double> platforms;
 
 HANDLE hBuffer[2];
 int currentFront = 0;
@@ -42,14 +42,15 @@ char screen[SCREEN_HEIGHT][SCREEN_WIDTH];
 
 LARGE_INTEGER freq, lastScoreTime;
 
-// 速度倍增
 double speedMultiplier = 1.0;
 double nextBoostTime = 20.0;
 const double BOOST_INTERVAL = 20.0;
-const double BOOST_FACTOR = 1.15;   // 增加15%
+const double BOOST_FACTOR = 1.15;
 
 // ===== 控制台初始化 =====
 void InitConsole() {
+    // 设置控制台输出代码页为 UTF-8
+    SetConsoleOutputCP(65001);
     timeBeginPeriod(1);
     system("mode con cols=80 lines=25");
     HANDLE hStdin = GetStdHandle(STD_INPUT_HANDLE);
@@ -113,7 +114,7 @@ void Draw() {
     }
 
     char scoreStr[32];
-    snprintf(scoreStr, sizeof(scoreStr), "Score: %lld", score);
+    snprintf(scoreStr, sizeof(scoreStr), "得分：%lld", score);
     int len = strlen(scoreStr);
     int startX = SCREEN_WIDTH - len - 1;
     if (startX < 0) startX = 0;
@@ -129,11 +130,9 @@ void Draw() {
 }
 
 void Update() {
-    // ---- 速度计算 ----
     double currentSpeed = (BASE_SPEED + score * SPEED_PER_SCORE) * speedMultiplier;
     if (currentSpeed > MAX_SPEED) currentSpeed = MAX_SPEED;
 
-    // ---- 时间累积与速度倍增 ----
     static double currentTime = 0.0;
     static LARGE_INTEGER lastTime = {0};
     LARGE_INTEGER now;
@@ -146,7 +145,6 @@ void Update() {
 
     if (currentTime >= nextBoostTime) {
         speedMultiplier *= BOOST_FACTOR;
-        // 限制不超过MAX_SPEED
         double tempSpeed = (BASE_SPEED + score * SPEED_PER_SCORE) * speedMultiplier;
         if (tempSpeed > MAX_SPEED) {
             speedMultiplier = MAX_SPEED / (BASE_SPEED + score * SPEED_PER_SCORE);
@@ -154,7 +152,6 @@ void Update() {
         nextBoostTime += BOOST_INTERVAL;
     }
 
-    // ---- 跳跃逻辑 ----
     if (isJumping) {
         if (dinoVy < 0) {
             if (spacePressed) {
@@ -184,16 +181,13 @@ void Update() {
         }
     }
 
-    // ---- 障碍物移动（使用浮点数） ----
     for (double& x : platforms)
         x -= currentSpeed;
 
-    // 移除出界障碍
     while (!platforms.empty() && platforms.front() + PLATFORM_WIDTH < 0) {
         platforms.pop_front();
     }
 
-    // ---- 障碍物生成 ----
     if (platforms.empty()) {
         platforms.push_back(SCREEN_WIDTH - PLATFORM_WIDTH);
     } else {
@@ -204,7 +198,6 @@ void Update() {
         }
     }
 
-    // ---- 碰撞检测 ----
     double dinoLeft = DINO_X;
     double dinoRight = DINO_X + 1.0;
     double dinoTop = dinoY - 1.0;
@@ -257,7 +250,6 @@ void ResetGame() {
     isJumping = false;
     spacePressed = false;
     platforms.clear();
-    // 初始障碍物放在屏幕右侧稍左
     platforms.push_back(SCREEN_WIDTH - PLATFORM_WIDTH - 5.0);
     speedMultiplier = 1.0;
     nextBoostTime = 20.0;
@@ -272,13 +264,13 @@ void ShowGameOver() {
     COORD topLeft = { 0, 0 };
     FillConsoleOutputCharacterA(hFront, ' ', SCREEN_WIDTH * SCREEN_HEIGHT, topLeft, &written);
     SetConsoleCursorPosition(hFront, { SCREEN_WIDTH / 2 - 6, SCREEN_HEIGHT / 2 });
-    WriteConsoleA(hFront, "GAME OVER!", 10, &written, NULL);
+    WriteConsoleA(hFront, "游戏结束！", 10, &written, NULL);
     SetConsoleCursorPosition(hFront, { SCREEN_WIDTH / 2 - 8, SCREEN_HEIGHT / 2 + 1 });
     char buf[32];
-    snprintf(buf, sizeof(buf), "Score: %lld", score);
+    snprintf(buf, sizeof(buf), "得分：%lld", score);
     WriteConsoleA(hFront, buf, strlen(buf), &written, NULL);
     SetConsoleCursorPosition(hFront, { SCREEN_WIDTH / 2 - 10, SCREEN_HEIGHT / 2 + 2 });
-    WriteConsoleA(hFront, "Press 'r' to restart, ESC to exit", 34, &written, NULL);
+    WriteConsoleA(hFront, "按 R 键重新开始，ESC 键退出", 34, &written, NULL);
 
     while (true) {
         if (!IsConsoleForeground()) {
