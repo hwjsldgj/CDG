@@ -16,16 +16,16 @@ const int SCREEN_HEIGHT = 25;
 const int GROUND_Y = 10;
 const int DINO_X = 5;
 const int PLATFORM_WIDTH = 1;
-const double BASE_SPEED = 0.5;         // 原1.0，降低50%
-const double MAX_SPEED = 1.5;          // 原3.0，按比例降低
-const double SPEED_PER_SCORE = 0.0001; // 增大10倍，速度增长更明显
-const double GRAVITY = 0.05;           // 降低，减缓下落
-const double JUMP_VEL_MAX = -0.42;     // 提高一点，增加上升高度
+const double BASE_SPEED = 0.5;         // 基础速度
+const double MAX_SPEED = 1.5;          // 最大速度
+const double SPEED_PER_SCORE = 0.0001; // 每分增速
+const double GRAVITY = 0.05;           // 重力
+const double JUMP_VEL_MAX = -0.42;     // 最大起跳速度
 const int MIN_GAP = 8;
 const int MAX_GAP = 40;
 const double COLLISION_DIST_THRESHOLD = 1.0;
-const double PHYSICS_DT = 1.0 / 60.0;
-const double TARGET_FPS = 120.0;
+const double PHYSICS_DT = 1.0 / 60.0;  // 物理步长 (60Hz)
+const double TARGET_FPS = 120.0;       // 目标帧率
 const double FRAME_TIME = 1.0 / TARGET_FPS;
 
 // ===== 游戏状态 =====
@@ -112,17 +112,25 @@ void Draw() {
         }
     }
 
+    // 分数（右上角右对齐）
     char scoreStr[32];
     snprintf(scoreStr, sizeof(scoreStr), "Score: %lld", score);
-    for (int i = 0; scoreStr[i] && i < SCREEN_WIDTH; ++i)
-        screen[0][i] = scoreStr[i];
+    int len = strlen(scoreStr);
+    int startX = SCREEN_WIDTH - len - 1;
+    if (startX < 0) startX = 0;
+    for (int i = 0; scoreStr[i] && (startX + i) < SCREEN_WIDTH; ++i)
+        screen[0][startX + i] = scoreStr[i];
 
+    // 速度系数显示（已注释，启用时显示 currentSpeed / BASE_SPEED，初始1.00）
+    /*
+    char speedStr[16];
     double currentSpeed = BASE_SPEED + score * SPEED_PER_SCORE;
     if (currentSpeed > MAX_SPEED) currentSpeed = MAX_SPEED;
-    char speedStr[16];
-    snprintf(speedStr, sizeof(speedStr), "Spd:%.2f", currentSpeed);
+    double displaySpeed = currentSpeed / BASE_SPEED;
+    snprintf(speedStr, sizeof(speedStr), "Spd:%.2f", displaySpeed);
     for (int i = 0; speedStr[i] && i < SCREEN_WIDTH; ++i)
         screen[1][i] = speedStr[i];
+    */
 
     DWORD bytesWritten;
     COORD writeCoord = { 0, 0 };
