@@ -6,6 +6,7 @@
 #include <ctime>
 #include <cstring>
 #include <cmath>
+#include <ctime>
 
 using namespace std;
 
@@ -17,8 +18,7 @@ const int DINO_X = 5;
 const int PLATFORM_WIDTH = 1;
 const int PLATFORM_SPEED = 1;
 const double GRAVITY = 0.15;
-const double JUMP_VEL_MAX = -0.77;       // 最大上升速度（负值）
-const double MAX_HOLD_TIME = 0.2;        // 不再使用，保留
+const double JUMP_VEL_MAX = -0.77;
 const int MIN_GAP = 8;
 const int MAX_GAP = 40;
 const double COLLISION_DIST_THRESHOLD = 1.0;
@@ -30,7 +30,6 @@ long long score = 0;
 double dinoY = GROUND_Y;
 double dinoVy = 0.0;
 bool isJumping = false;
-
 bool spacePressed = false;
 
 vector<int> platforms;
@@ -104,7 +103,7 @@ void Draw() {
     }
 
     char scoreStr[32];
-    snprintf(scoreStr, sizeof(scoreStr), "Score: %lld", score / 10);
+    snprintf(scoreStr, sizeof(scoreStr), "Score: %lld", score);
     for (int i = 0; scoreStr[i] && i < SCREEN_WIDTH; ++i)
         screen[0][i] = scoreStr[i];
 
@@ -123,29 +122,23 @@ void Draw() {
 // ===== 更新（每帧） =====
 void Update() {
     if (isJumping) {
-        // 上升阶段（速度向上）
         if (dinoVy < 0) {
             if (spacePressed) {
-                // 按住空格，保持最大上升速度（抵消重力）
                 dinoVy = JUMP_VEL_MAX;
             } else {
-                // 松开空格，重力开始减速
                 dinoVy += GRAVITY;
             }
         } else {
-            // 下降阶段，重力加速
             dinoVy += GRAVITY;
         }
 
         dinoY += dinoVy;
 
-        // 限制最高点（防止穿顶）
         if (dinoY < 2.0) {
             dinoY = 2.0;
-            dinoVy = 0.0; // 转为下降
+            dinoVy = 0.0;
         }
 
-        // 落地检测
         if (dinoY >= GROUND_Y) {
             dinoY = GROUND_Y;
             dinoVy = 0.0;
@@ -153,7 +146,6 @@ void Update() {
         }
     }
 
-    // 障碍物移动
     for (int& x : platforms)
         x -= PLATFORM_SPEED;
 
@@ -170,7 +162,6 @@ void Update() {
         }
     }
 
-    // 碰撞检测（AABB）
     double dinoLeft = DINO_X;
     double dinoRight = DINO_X + 1.0;
     double dinoTop = dinoY - 1.0;
@@ -188,8 +179,6 @@ void Update() {
             break;
         }
     }
-
-    ++score;
 }
 
 // ===== 输入 =====
@@ -203,7 +192,6 @@ void UpdateInput() {
 
     if (!isJumping && dinoY >= GROUND_Y) {
         if (isSpaceDown && !spacePressed) {
-            // 起跳，给予最大向上速度
             dinoVy = JUMP_VEL_MAX;
             isJumping = true;
         }
@@ -240,7 +228,7 @@ void ShowGameOver() {
     WriteConsoleA(hFront, "GAME OVER!", 10, &written, NULL);
     SetConsoleCursorPosition(hFront, { SCREEN_WIDTH / 2 - 8, SCREEN_HEIGHT / 2 + 1 });
     char buf[32];
-    snprintf(buf, sizeof(buf), "Score: %lld", score / 10);
+    snprintf(buf, sizeof(buf), "Score: %lld", score);
     WriteConsoleA(hFront, buf, strlen(buf), &written, NULL);
     SetConsoleCursorPosition(hFront, { SCREEN_WIDTH / 2 - 10, SCREEN_HEIGHT / 2 + 2 });
     WriteConsoleA(hFront, "Press 'r' to restart, ESC to exit", 34, &written, NULL);
@@ -270,6 +258,10 @@ int main() {
     ResetGame();
     Draw();
 
+    // 计分计时器（每0.1秒加1分）
+    clock_t lastScoreTime = clock();
+    const double SCORE_INTERVAL = 0.1; // 秒
+
     while (true) {
         UpdateInput();
 
@@ -279,6 +271,15 @@ int main() {
         }
 
         Update();
+
+        // 每0.1秒加1分（每秒加10分，平滑增长）
+        clock_t now = clock();
+        double elapsed = (double)(now - lastScoreTime) / CLOCKS_PER_SEC;
+        if (elapsed >= SCORE_INTERVAL) {
+            score++;                     // 加1分
+            lastScoreTime = now;        // 重置计时（注意：不累加剩余时间，保证精确）
+        }
+
         Draw();
 
         Sleep(16);
