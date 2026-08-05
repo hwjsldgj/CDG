@@ -38,7 +38,7 @@ deque<double> platforms;
 
 HANDLE hBuffer[2];
 int currentFront = 0;
-wchar_t screen[SCREEN_HEIGHT][SCREEN_WIDTH];
+char screen[SCREEN_HEIGHT][SCREEN_WIDTH];
 
 LARGE_INTEGER freq, lastScoreTime;
 
@@ -47,7 +47,7 @@ double nextBoostTime = 20.0;
 const double BOOST_INTERVAL = 20.0;
 const double BOOST_FACTOR = 1.15;
 
-// ===== 重置控制台窗口（强制无滚动条） =====
+// ===== 强制重置窗口尺寸 =====
 void ResetConsoleWindow(HANDLE hConsole) {
     COORD bufferSize = { SCREEN_WIDTH, SCREEN_HEIGHT };
     SetConsoleScreenBufferSize(hConsole, bufferSize);
@@ -55,13 +55,20 @@ void ResetConsoleWindow(HANDLE hConsole) {
     SetConsoleWindowInfo(hConsole, TRUE, &windowRect);
 }
 
+// ===== 确保缓冲区尺寸正确 =====
+void EnsureBufferSize(HANDLE hConsole) {
+    CONSOLE_SCREEN_BUFFER_INFO csbi;
+    if (!GetConsoleScreenBufferInfo(hConsole, &csbi)) return;
+    if (csbi.dwSize.X != SCREEN_WIDTH || csbi.dwSize.Y != SCREEN_HEIGHT) {
+        ResetConsoleWindow(hConsole);
+    }
+}
+
 // ===== 控制台初始化 =====
 void InitConsole() {
     SetConsoleOutputCP(65001);
     timeBeginPeriod(1);
-
-    HANDLE hStdOut = GetStdHandle(STD_OUTPUT_HANDLE);
-    ResetConsoleWindow(hStdOut);
+    system("mode con cols=80 lines=25");
 
     HANDLE hStdin = GetStdHandle(STD_INPUT_HANDLE);
     DWORD mode;
@@ -95,54 +102,49 @@ bool IsConsoleForeground() {
 }
 
 void Draw() {
-    HANDLE hBack = hBuffer[1 - currentFront];
-    ResetConsoleWindow(hBack);
+    int back = 1 - currentFront;
+    HANDLE hBack = hBuffer[back];
 
-    COORD topLeft = { 0, 0 };
-    SetConsoleCursorPosition(hBack, topLeft);
+    // 确保后台缓冲区尺寸正确
+    EnsureBufferSize(hBack);
 
-    // 填充屏幕缓冲区
-    for (int y = 0; y < SCREEN_HEIGHT; ++y)
-        for (int x = 0; x < SCREEN_WIDTH; ++x)
-            screen[y][x] = L' ';
-
+    memset(screen, ' ', sizeof(screen));
     for (int x = 0; x < SCREEN_WIDTH; ++x)
-        screen[GROUND_Y][x] = L'-';
+        screen[GROUND_Y][x] = '-';
 
     int dinoRow = (int)(dinoY + 0.5);
     int topRow = dinoRow - 1;
     if (topRow >= 0 && topRow < SCREEN_HEIGHT)
-        screen[topRow][DINO_X] = L'D';
+        screen[topRow][DINO_X] = 'D';
     if (dinoRow >= 0 && dinoRow < SCREEN_HEIGHT)
-        screen[dinoRow][DINO_X] = L'D';
+        screen[dinoRow][DINO_X] = 'D';
 
     for (double px : platforms) {
         int col = (int)(px + 0.5);
         if (col >= 0 && col < SCREEN_WIDTH) {
-            screen[GROUND_Y][col] = L'#';
+            screen[GROUND_Y][col] = '#';
             if (GROUND_Y - 1 >= 0)
-                screen[GROUND_Y - 1][col] = L'#';
+                screen[GROUND_Y - 1][col] = '#';
         }
     }
 
-    // 得分（右上角）
-    wchar_t scoreStr[32];
-    swprintf(scoreStr, 32, L"得分：%lld", score);
-    int len = wcslen(scoreStr);
+    char scoreStr[32];
+    snprintf(scoreStr, sizeof(scoreStr), "得分：%lld", score);
+    int len = strlen(scoreStr);
     int startX = SCREEN_WIDTH - len - 1;
     if (startX < 0) startX = 0;
     for (int i = 0; i < len && (startX + i) < SCREEN_WIDTH; ++i)
         screen[0][startX + i] = scoreStr[i];
 
-    // 逐行写入，避免缓冲区宽度不一致导致的环绕
+    // 逐行写入，避免环绕
     DWORD bytesWritten;
     for (int y = 0; y < SCREEN_HEIGHT; ++y) {
         COORD pos = { 0, (SHORT)y };
-        WriteConsoleOutputCharacterW(hBack, screen[y], SCREEN_WIDTH, pos, &bytesWritten);
+        WriteConsoleOutputCharacterA(hBack, screen[y], SCREEN_WIDTH, pos, &bytesWritten);
     }
 
     SetConsoleActiveScreenBuffer(hBack);
-    currentFront = 1 - currentFront;
+    currentFront = back;
 }
 
 void Update() {
@@ -276,18 +278,23 @@ void ResetGame() {
 
 void ShowGameOver() {
     HANDLE hFront = hBuffer[currentFront];
-    ResetConsoleWindow(hFront);
+    EnsureBufferSize(hFront);
 
-    COORD topLeft = { 0, 0 };
+    // 清屏（宽字符）
     DWORD written;
-
-    // 清空屏幕（宽字符）
+    COORD topLeft = { 0, 0 };
     FillConsoleOutputCharacterW(hFront, L' ', SCREEN_WIDTH * SCREEN_HEIGHT, topLeft, &written);
 
-    // 准备宽字符串
+    // 中文字符串
     const wchar_t* title = L"游戏结束！";
     int titleLen = wcslen(title);
-    int titleCols = titleLen * 2; // 中文字符占2列
+    int titleCols = 0;
+    for (int i = 0; i < titleLen; ++i) {
+        if (title[i] >= 0x4E00 && title[i] <= 0x9FA5)
+            titleCols += 2;
+        else
+            titleCols += 1;
+    }
 
     wchar_t scoreBuf[32];
     swprintf(scoreBuf, 32, L"得分：%lld", score);
