@@ -9,17 +9,18 @@
 
 using namespace std;
 
-// ===== 常量配置 =====
+// ===== 常量 =====
 const int SCREEN_WIDTH = 80;
 const int SCREEN_HEIGHT = 25;
 const int GROUND_Y = 10;
 const int DINO_X = 5;
 const int PLATFORM_WIDTH = 1;
-const int PLATFORM_SPEED = 1;        // 每帧左移像素
-const double GRAVITY = 0.2;          // 每帧重力增量
-const double JUMP_VEL_MIN = -0.775;
-const double JUMP_VEL_MAX = -1.7;
-const double MAX_HOLD_TIME = 0.2;    // 加速窗口时间（秒），转换为帧数 = 0.2 * 60 ≈ 12帧
+const int PLATFORM_SPEED = 1;
+const double GRAVITY = 0.2;
+const double MIN_SPEED = -0.775;     // 最小速度（charge=0）
+const double MAX_SPEED = -1.7;       // 最大速度（charge=0.2）
+const double CHARGE_RATE = 0.008;    // 每帧蓄力增加量
+const double DECAY_RATE = 0.005;     // 每帧衰减量
 const int MIN_GAP = 8;
 const int MAX_GAP = 40;
 const double COLLISION_DIST_THRESHOLD = 1.0;
@@ -31,7 +32,10 @@ int score = 0;
 double dinoY = GROUND_Y;
 double dinoVy = 0.0;
 bool isJumping = false;
-int riseFrame = 0;                   // 上升累计帧数（用于加速窗口）
+
+// 蓄力相关
+double charge = 0.0;          // 当前蓄力值（0~0.2）
+bool isCharging = false;      // 是否处于蓄力增加阶段（按住空格且charge==0开始）
 
 bool spacePressed = false;
 
@@ -104,6 +108,12 @@ void Draw() {
     for (int i = 0; scoreStr[i] && i < SCREEN_WIDTH; ++i)
         screen[0][i] = scoreStr[i];
 
+    // 显示蓄力值（调试用，可删除）
+    char chargeStr[16];
+    snprintf(chargeStr, sizeof(chargeStr), "C:%.2f", charge);
+    for (int i = 0; chargeStr[i] && i < SCREEN_WIDTH; ++i)
+        screen[1][i] = chargeStr[i];
+
     DWORD bytesWritten;
     COORD writeCoord = { 0, 0 };
     for (int y = 0; y < SCREEN_HEIGHT; ++y) {
@@ -116,35 +126,51 @@ void Draw() {
     currentFront = back;
 }
 
-// ===== 更新（每帧调用） =====
+// ===== 更新蓄力 =====
+void UpdateCharge() {
+    // 蓄力增加条件：按住空格且 charge==0（开始蓄力），且处于可蓄力状态（未锁定）
+    if (spacePressed && charge == 0.0 && !isJumping) {
+        isCharging = true;
+    }
+
+    // 如果处于蓄力增加阶段
+    if (isCharging) {
+        if (spacePressed) {
+            charge += CHARGE_RATE;
+            if (charge > 0.2) charge = 0.2;
+        } else {
+            // 松开空格，进入衰减阶段
+            isCharging = false;
+        }
+    }
+
+    // 衰减阶段（不管是否按住，只要 charge>0 且不在蓄力增加状态）
+    if (!isCharging && charge > 0.0) {
+        charge -= DECAY_RATE;
+        if (charge < 0.0) {
+            charge = 0.0;
+            // 完全衰减后，允许重新蓄力（isCharging 可重新开启）
+        }
+    }
+
+    // 重要：如果 charge>0 且正在衰减（isCharging==false），即使按住空格也不影响，直到 charge 降到0。
+}
+
+// ===== 更新（每帧） =====
 void Update() {
+    // 更新蓄力状态
+    UpdateCharge();
+
+    // 物理更新
     if (isJumping) {
         dinoVy += GRAVITY;
-
-        // 上升阶段计时
-        if (dinoVy < 0) {
-            ++riseFrame;
-            if (riseFrame > (int)(MAX_HOLD_TIME * 60)) // 约12帧
-                riseFrame = (int)(MAX_HOLD_TIME * 60);
-        }
-
-        // 加速：按住空格、上升中、且在加速窗口内
-        if (spacePressed && dinoVy < 0 && riseFrame < (int)(MAX_HOLD_TIME * 60)) {
-            double ratio = (double)riseFrame / (MAX_HOLD_TIME * 60);
-            double targetVel = JUMP_VEL_MIN + (JUMP_VEL_MAX - JUMP_VEL_MIN) * ratio;
-            if (dinoVy > targetVel)
-                dinoVy = targetVel;
-            if (dinoVy < JUMP_VEL_MAX)
-                dinoVy = JUMP_VEL_MAX;
-        }
-
         dinoY += dinoVy;
 
         if (dinoY >= GROUND_Y) {
             dinoY = GROUND_Y;
             dinoVy = 0.0;
             isJumping = false;
-            riseFrame = 0;
+            // 落地后重置蓄力？或者保留？我们保留 charge 继续衰减
         }
     }
 
@@ -165,7 +191,7 @@ void Update() {
         }
     }
 
-    // 碰撞检测（浮点）
+    // 碰撞检测
     double dinoLeft = DINO_X;
     double dinoRight = DINO_X + 1.0;
     double dinoTop = dinoY - 1.0;
@@ -199,11 +225,14 @@ void Update() {
 void UpdateInput() {
     bool isSpaceDown = (GetAsyncKeyState(VK_SPACE) & 0x8000) != 0;
 
+    // 起跳：在地面且按下空格（瞬间）
     if (!isJumping && dinoY >= GROUND_Y) {
         if (isSpaceDown && !spacePressed) {
-            dinoVy = JUMP_VEL_MIN;
+            // 根据当前 charge 计算初速度
+            double speedFactor = MIN_SPEED + (MAX_SPEED - MIN_SPEED) * (charge / 0.2); // charge 0~0.2
+            dinoVy = speedFactor;
             isJumping = true;
-            riseFrame = 0;
+            // 起跳后，蓄力状态不受影响，继续
         }
     }
 
@@ -220,13 +249,14 @@ void ResetGame() {
     dinoY = GROUND_Y;
     dinoVy = 0.0;
     isJumping = false;
+    charge = 0.0;
+    isCharging = false;
     spacePressed = false;
-    riseFrame = 0;
     platforms.clear();
     platforms.push_back(SCREEN_WIDTH - PLATFORM_WIDTH + rand() % 20);
 }
 
-// ===== Game Over 界面 =====
+// ===== Game Over =====
 void ShowGameOver() {
     HANDLE hFront = hBuffer[currentFront];
     DWORD written;
@@ -274,8 +304,7 @@ int main() {
         Update();
         Draw();
 
-        // 固定帧率约 60 FPS（16ms）
-        Sleep(16);
+        Sleep(16); // ~60 FPS
     }
 
     return 0;
