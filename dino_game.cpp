@@ -46,10 +46,15 @@ char screen[SCREEN_HEIGHT][SCREEN_WIDTH];
 LARGE_INTEGER freq, lastTime;
 double deltaTime = 0.0;
 double currentTime = 0.0;          // 游戏运行总时间（秒）
-double nextClearTime = 20.0;       // 下次速度倍增时间点
+double nextClearTime = 20.0;       // 下次速度倍增触发时间点
 bool safeZoneActive = false;       // 是否处于预清空状态
 
+// 速度过渡相关
 double speedMultiplier = 1.0;
+double targetMultiplier = 1.0;
+bool isTransitioning = false;
+double transitionStartTime = 0.0;
+double transitionDuration = 6.0;   // 过渡总时长（秒）
 
 // ===== 控制台初始化 =====
 void InitConsole() {
@@ -125,13 +130,10 @@ void Draw() {
     for (int i = 0; scoreStr[i] && (startX + i) < SCREEN_WIDTH; ++i)
         screen[0][startX + i] = scoreStr[i];
 
-    // 速度系数显示已注释，启用时显示 (BASE_SPEED + score*SPEED_PER_SCORE)*speedMultiplier / BASE_SPEED
+    // 速度系数显示已注释，启用时显示当前乘数
     /*
     char speedStr[16];
-    double currentSpeed = (BASE_SPEED + score * SPEED_PER_SCORE) * speedMultiplier;
-    if (currentSpeed > MAX_SPEED) currentSpeed = MAX_SPEED;
-    double displaySpeed = currentSpeed / BASE_SPEED;
-    snprintf(speedStr, sizeof(speedStr), "Spd:%.2f", displaySpeed);
+    snprintf(speedStr, sizeof(speedStr), "Mul:%.2f", speedMultiplier);
     for (int i = 0; speedStr[i] && i < SCREEN_WIDTH; ++i)
         screen[1][i] = speedStr[i];
     */
@@ -149,6 +151,7 @@ void Draw() {
 }
 
 void PhysicsUpdate() {
+    // 计算当前速度（基础速度 + 线性增长）* 乘数，并限制上限
     double currentSpeed = (BASE_SPEED + score * SPEED_PER_SCORE) * speedMultiplier;
     if (currentSpeed > MAX_SPEED) currentSpeed = MAX_SPEED;
 
@@ -181,6 +184,7 @@ void PhysicsUpdate() {
         }
     }
 
+    // 障碍物移动
     for (double& x : platforms)
         x -= currentSpeed;
 
@@ -198,9 +202,8 @@ void PhysicsUpdate() {
         if (lastX + PLATFORM_WIDTH < SCREEN_WIDTH - 10) {
             int gap = MIN_GAP + rand() % (MAX_GAP - MIN_GAP + 1);
             double newX = lastX + PLATFORM_WIDTH + gap;
-            if (safeZoneActive && newX < DINO_X + 20.0) {
+            if (safeZoneActive && newX < DINO_X + 20.0)
                 newX = DINO_X + 20.0;
-            }
             platforms.push_back(newX);
         }
     }
@@ -259,9 +262,12 @@ void ResetGame() {
     platforms.clear();
     platforms.push_back(SCREEN_WIDTH - PLATFORM_WIDTH + rand() % 20);
     speedMultiplier = 1.0;
+    targetMultiplier = 1.0;
+    isTransitioning = false;
     currentTime = 0.0;
     nextClearTime = 20.0;
     safeZoneActive = false;
+    transitionStartTime = 0.0;
 }
 
 void ShowGameOver() {
@@ -321,25 +327,70 @@ int main() {
         lastTime = current;
         if (deltaTime > 0.05) deltaTime = 0.05;
 
-        // 累加游戏时间
         currentTime += deltaTime;
 
-        // 在触发前3秒激活安全区
+        // ===== 速度过渡逻辑 =====
+        if (isTransitioning) {
+            double elapsed = currentTime - transitionStartTime;
+            double t = elapsed / transitionDuration;
+            if (t >= 1.0) {
+                t = 1.0;
+                isTransitioning = false;
+                speedMultiplier = targetMultiplier;
+            } else {
+                // 线性插值
+                double oldMultiplier = targetMultiplier / 1.2; // 因为目标始终是开始的1.2倍
+                // 但更通用：保存过渡开始时的乘数
+                // 我们需要存储起始乘数，简单做法：在触发时保存
+                // 我们在触发时设置 transitionStartMultiplier
+                // 为了简化，将逻辑放到触发点，这里假设我们保存了 startMultiplier
+                // 下面实现时我们会添加 startMultiplier 变量
+            }
+        }
+
+        // 使用独立变量存储过渡起始乘数
+        static double transitionStartMultiplier = 1.0;
+        if (isTransitioning) {
+            double elapsed = currentTime - transitionStartTime;
+            double t = elapsed / transitionDuration;
+            if (t >= 1.0) {
+                t = 1.0;
+                isTransitioning = false;
+                speedMultiplier = targetMultiplier;
+            } else {
+                speedMultiplier = transitionStartMultiplier + (targetMultiplier - transitionStartMultiplier) * t;
+            }
+        }
+
+        // ===== 安全区和触发检测 =====
         if (currentTime >= nextClearTime - 3.0 && !safeZoneActive) {
             safeZoneActive = true;
         }
 
-        // 到达触发时间
         if (currentTime >= nextClearTime) {
-            nextClearTime += 20.0;
-            safeZoneActive = false; // 重置，下次再提前激活
-
-            // 速度倍增
-            speedMultiplier *= 1.2;
+            // 触发速度倍增，开始过渡
+            transitionStartMultiplier = speedMultiplier;
+            targetMultiplier = speedMultiplier * 1.2;
+            // 限制不超过 MAX_SPEED 对应的乘数
             double base = BASE_SPEED + score * SPEED_PER_SCORE;
-            if (speedMultiplier * base > MAX_SPEED) {
-                speedMultiplier = MAX_SPEED / base;
+            double maxMultiplier = MAX_SPEED / base;
+            if (targetMultiplier > maxMultiplier) {
+                targetMultiplier = maxMultiplier;
+                // 如果目标等于当前，则无需过渡
+                if (targetMultiplier == speedMultiplier) {
+                    isTransitioning = false;
+                } else {
+                    isTransitioning = true;
+                    transitionStartTime = currentTime;
+                }
+            } else {
+                isTransitioning = true;
+                transitionStartTime = currentTime;
             }
+
+            // 重置安全区
+            safeZoneActive = false;
+            nextClearTime += 20.0;
         }
 
         // 固定物理步长更新
