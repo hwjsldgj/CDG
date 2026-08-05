@@ -17,10 +17,10 @@ const int PLATFORM_WIDTH = 1;
 const int PLATFORM_SPEED = 1;
 const double GRAVITY = 0.15;
 
-// 跳跃速度范围
+// 跳跃速度范围（最高高度不变）
 const double JUMP_VEL_MIN = -0.775;   // 最低跳跃速度（上升2格）
 const double JUMP_VEL_MAX = -1.56;    // 最高跳跃速度（上升~8.1格）
-const double BOOST_ACCEL = -0.12;     // 按住空格时每帧额外向上的加速度
+const double BOOST_ACCEL = -0.3;      // 增大向上加速度，使更快达到最高速度（原为-0.12）
 
 const int MIN_GAP = 8;
 const int MAX_GAP = 40;
@@ -33,7 +33,7 @@ double dinoY = GROUND_Y;
 double dinoVy = 0.0;
 bool isJumping = false;
 
-bool spacePressed = false;   // 空格是否正被按住
+bool spacePressed = false;
 
 vector<int> platforms;
 
@@ -85,7 +85,6 @@ void Draw() {
     for (int x = 0; x < SCREEN_WIDTH; x++)
         screen[GROUND_Y][x] = '-';
 
-    // 人物（两格）
     int dinoRow = (int)dinoY;
     int topRow = dinoRow - 1;
     if (topRow >= 0 && topRow < SCREEN_HEIGHT)
@@ -93,7 +92,6 @@ void Draw() {
     if (dinoRow >= 0 && dinoRow < SCREEN_HEIGHT)
         screen[dinoRow][DINO_X] = 'D';
 
-    // 障碍物（两格高，一格宽）
     for (int px : platforms) {
         int col = px;
         if (col >= 0 && col < SCREEN_WIDTH) {
@@ -122,21 +120,17 @@ void Draw() {
 
 // ---------- 更新 ----------
 void Update(double deltaTime) {
-    // 物理更新
     if (isJumping) {
-        // 重力
         dinoVy += GRAVITY;
 
-        // 如果按住空格，则额外向上加速（但不超过最大速度）
         if (spacePressed) {
             dinoVy += BOOST_ACCEL;
-            if (dinoVy < JUMP_VEL_MAX)   // 限制最大上升速度
+            if (dinoVy < JUMP_VEL_MAX)
                 dinoVy = JUMP_VEL_MAX;
         }
 
         dinoY += dinoVy;
 
-        // 落地检测
         if (dinoY >= GROUND_Y) {
             dinoY = GROUND_Y;
             dinoVy = 0.0;
@@ -144,14 +138,12 @@ void Update(double deltaTime) {
         }
     }
 
-    // 障碍物左移
     for (int& x : platforms)
         x -= PLATFORM_SPEED;
 
     while (!platforms.empty() && platforms.front() + PLATFORM_WIDTH < 0)
         platforms.erase(platforms.begin());
 
-    // 生成新障碍物
     if (platforms.empty()) {
         platforms.push_back(SCREEN_WIDTH - PLATFORM_WIDTH);
     } else {
@@ -163,7 +155,7 @@ void Update(double deltaTime) {
         }
     }
 
-    // 碰撞检测（水平距离 < 1.0）
+    // 碰撞检测
     int dinoLeft = DINO_X;
     int dinoRight = DINO_X + 1;
     int dinoTop = (int)dinoY - 1;
@@ -195,27 +187,19 @@ void Update(double deltaTime) {
     score++;
 }
 
-// ---------- 输入处理（使用GetAsyncKeyState实时检测） ----------
+// ---------- 输入 ----------
 void UpdateInput() {
-    // 检测空格是否被按住
     bool isSpaceDown = (GetAsyncKeyState(VK_SPACE) & 0x8000) != 0;
 
-    // 如果在地面且未跳跃，按下空格立即起跳
     if (!isJumping && dinoY >= GROUND_Y) {
         if (isSpaceDown && !spacePressed) {
-            // 按下瞬间起跳，给予最低速度
             dinoVy = JUMP_VEL_MIN;
             isJumping = true;
-            spacePressed = true;
         }
     }
 
-    // 更新空格状态（用于跳跃过程中持续加速）
-    spacePressed = isSpaceDown;   // 如果按住，spacePressed保持true
+    spacePressed = isSpaceDown;
 
-    // 如果跳跃过程中松开空格，spacePressed会被置false（已在上面更新）
-
-    // ESC退出
     if (GetAsyncKeyState(VK_ESCAPE) & 0x8000)
         exit(0);
 }
