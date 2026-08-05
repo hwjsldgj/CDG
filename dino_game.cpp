@@ -1,3 +1,5 @@
+// 文件已废弃
+
 #include <iostream>
 #include <conio.h>
 #include <windows.h>
