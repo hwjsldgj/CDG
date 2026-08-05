@@ -15,11 +15,11 @@ const int SCREEN_HEIGHT = 25;
 const int GROUND_Y = 10;
 const int DINO_X = 5;
 const int PLATFORM_WIDTH = 1;
-const double PLATFORM_SPEED = 6.0;   // 每秒左移像素
-const double GRAVITY = 0.3;          // 重力加速度（调整手感）
+const int PLATFORM_SPEED = 1;        // 每帧左移像素
+const double GRAVITY = 0.2;          // 每帧重力增量
 const double JUMP_VEL_MIN = -0.775;
 const double JUMP_VEL_MAX = -1.7;
-const double MAX_HOLD_TIME = 0.2;
+const double MAX_HOLD_TIME = 0.2;    // 加速窗口时间（秒），转换为帧数 = 0.2 * 60 ≈ 12帧
 const int MIN_GAP = 8;
 const int MAX_GAP = 40;
 const double COLLISION_DIST_THRESHOLD = 1.0;
@@ -31,27 +31,17 @@ int score = 0;
 double dinoY = GROUND_Y;
 double dinoVy = 0.0;
 bool isJumping = false;
-double riseTime = 0.0;
-
-vector<double> platforms;   // 存储浮点x坐标
+int riseFrame = 0;                   // 上升累计帧数（用于加速窗口）
 
 bool spacePressed = false;
+
+vector<int> platforms;
 
 HANDLE hBuffer[2];
 int currentFront = 0;
 char screen[SCREEN_HEIGHT][SCREEN_WIDTH];
 
-LARGE_INTEGER freq;
-LARGE_INTEGER lastTime;
-
-double GetDeltaTime() {
-    LARGE_INTEGER current;
-    QueryPerformanceCounter(&current);
-    double dt = (double)(current.QuadPart - lastTime.QuadPart) / (double)freq.QuadPart;
-    lastTime = current;
-    return dt;
-}
-
+// ===== 控制台初始化 =====
 void InitConsole() {
     system("mode con cols=80 lines=25");
     HANDLE hStdin = GetStdHandle(STD_INPUT_HANDLE);
@@ -80,11 +70,9 @@ void InitConsole() {
 
     SetConsoleActiveScreenBuffer(hBuffer[0]);
     currentFront = 0;
-
-    QueryPerformanceFrequency(&freq);
-    QueryPerformanceCounter(&lastTime);
 }
 
+// ===== 绘制 =====
 void Draw() {
     int back = 1 - currentFront;
     HANDLE hBack = hBuffer[back];
@@ -103,12 +91,11 @@ void Draw() {
     if (dinoRow >= 0 && dinoRow < SCREEN_HEIGHT)
         screen[dinoRow][DINO_X] = 'D';
 
-    for (double px : platforms) {
-        int col = (int)(px + 0.5);
-        if (col >= 0 && col < SCREEN_WIDTH) {
-            screen[GROUND_Y][col] = '#';
+    for (int px : platforms) {
+        if (px >= 0 && px < SCREEN_WIDTH) {
+            screen[GROUND_Y][px] = '#';
             if (GROUND_Y - 1 >= 0)
-                screen[GROUND_Y - 1][col] = '#';
+                screen[GROUND_Y - 1][px] = '#';
         }
     }
 
@@ -129,17 +116,21 @@ void Draw() {
     currentFront = back;
 }
 
-void Update(double dt) {
+// ===== 更新（每帧调用） =====
+void Update() {
     if (isJumping) {
-        dinoVy += GRAVITY * dt;
+        dinoVy += GRAVITY;
+
+        // 上升阶段计时
         if (dinoVy < 0) {
-            riseTime += dt;
-            if (riseTime > MAX_HOLD_TIME)
-                riseTime = MAX_HOLD_TIME;
+            ++riseFrame;
+            if (riseFrame > (int)(MAX_HOLD_TIME * 60)) // 约12帧
+                riseFrame = (int)(MAX_HOLD_TIME * 60);
         }
 
-        if (spacePressed && dinoVy < 0 && riseTime < MAX_HOLD_TIME) {
-            double ratio = riseTime / MAX_HOLD_TIME;
+        // 加速：按住空格、上升中、且在加速窗口内
+        if (spacePressed && dinoVy < 0 && riseFrame < (int)(MAX_HOLD_TIME * 60)) {
+            double ratio = (double)riseFrame / (MAX_HOLD_TIME * 60);
             double targetVel = JUMP_VEL_MIN + (JUMP_VEL_MAX - JUMP_VEL_MIN) * ratio;
             if (dinoVy > targetVel)
                 dinoVy = targetVel;
@@ -147,42 +138,40 @@ void Update(double dt) {
                 dinoVy = JUMP_VEL_MAX;
         }
 
-        dinoY += dinoVy * dt;
+        dinoY += dinoVy;
 
         if (dinoY >= GROUND_Y) {
             dinoY = GROUND_Y;
             dinoVy = 0.0;
             isJumping = false;
-            riseTime = 0.0;
+            riseFrame = 0;
         }
     }
 
-    // 障碍物移动（乘以dt）
-    for (double& x : platforms)
-        x -= PLATFORM_SPEED * dt;
+    // 障碍物移动
+    for (int& x : platforms)
+        x -= PLATFORM_SPEED;
 
-    // 移除
     while (!platforms.empty() && platforms.front() + PLATFORM_WIDTH < 0)
         platforms.erase(platforms.begin());
 
-    // 生成
     if (platforms.empty()) {
         platforms.push_back(SCREEN_WIDTH - PLATFORM_WIDTH);
     } else {
-        double lastX = platforms.back();
+        int lastX = platforms.back();
         if (lastX + PLATFORM_WIDTH < SCREEN_WIDTH - 10) {
             int gap = MIN_GAP + rand() % (MAX_GAP - MIN_GAP + 1);
             platforms.push_back(lastX + PLATFORM_WIDTH + gap);
         }
     }
 
-    // 碰撞检测
+    // 碰撞检测（浮点）
     double dinoLeft = DINO_X;
     double dinoRight = DINO_X + 1.0;
     double dinoTop = dinoY - 1.0;
     double dinoBottom = dinoY;
 
-    for (double px : platforms) {
+    for (int px : platforms) {
         double platLeft = px;
         double platRight = px + PLATFORM_WIDTH;
         double platTop = GROUND_Y - 1.0;
@@ -203,9 +192,10 @@ void Update(double dt) {
         }
     }
 
-    score++;
+    ++score;
 }
 
+// ===== 输入 =====
 void UpdateInput() {
     bool isSpaceDown = (GetAsyncKeyState(VK_SPACE) & 0x8000) != 0;
 
@@ -213,7 +203,7 @@ void UpdateInput() {
         if (isSpaceDown && !spacePressed) {
             dinoVy = JUMP_VEL_MIN;
             isJumping = true;
-            riseTime = 0.0;
+            riseFrame = 0;
         }
     }
 
@@ -223,6 +213,7 @@ void UpdateInput() {
         exit(0);
 }
 
+// ===== 重置 =====
 void ResetGame() {
     gameOver = false;
     score = 0;
@@ -230,11 +221,12 @@ void ResetGame() {
     dinoVy = 0.0;
     isJumping = false;
     spacePressed = false;
-    riseTime = 0.0;
+    riseFrame = 0;
     platforms.clear();
     platforms.push_back(SCREEN_WIDTH - PLATFORM_WIDTH + rand() % 20);
 }
 
+// ===== Game Over 界面 =====
 void ShowGameOver() {
     HANDLE hFront = hBuffer[currentFront];
     DWORD written;
@@ -264,6 +256,7 @@ void ShowGameOver() {
     }
 }
 
+// ===== 主循环 =====
 int main() {
     srand((unsigned)time(nullptr));
     InitConsole();
@@ -271,9 +264,6 @@ int main() {
     Draw();
 
     while (true) {
-        double dt = GetDeltaTime();
-        if (dt > 0.05) dt = 0.05;
-
         UpdateInput();
 
         if (gameOver) {
@@ -281,9 +271,11 @@ int main() {
             continue;
         }
 
-        Update(dt);
+        Update();
         Draw();
-        Sleep(1);
+
+        // 固定帧率约 60 FPS（16ms）
+        Sleep(16);
     }
 
     return 0;
