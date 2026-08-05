@@ -16,14 +16,17 @@ const int SCREEN_HEIGHT = 25;
 const int GROUND_Y = 10;
 const int DINO_X = 5;
 const int PLATFORM_WIDTH = 1;
-const double BASE_SPEED = 1.0;
-const double MAX_SPEED = 3.0;
-const double SPEED_PER_SCORE = 0.0002;   // 每1分增加的速度（线性系数）
-const double GRAVITY = 0.12;
-const double JUMP_VEL_MAX = -0.77;
+const double BASE_SPEED = 0.5;         // 原1.0，降低50%
+const double MAX_SPEED = 1.5;          // 原3.0，按比例降低
+const double SPEED_PER_SCORE = 0.0001; // 增大10倍，速度增长更明显
+const double GRAVITY = 0.05;           // 降低，减缓下落
+const double JUMP_VEL_MAX = -0.42;     // 提高一点，增加上升高度
 const int MIN_GAP = 8;
 const int MAX_GAP = 40;
 const double COLLISION_DIST_THRESHOLD = 1.0;
+const double PHYSICS_DT = 1.0 / 60.0;
+const double TARGET_FPS = 120.0;
+const double FRAME_TIME = 1.0 / TARGET_FPS;
 
 // ===== 游戏状态 =====
 bool gameOver = false;
@@ -39,6 +42,9 @@ vector<double> platforms;
 HANDLE hBuffer[2];
 int currentFront = 0;
 char screen[SCREEN_HEIGHT][SCREEN_WIDTH];
+
+LARGE_INTEGER freq, lastTime;
+double deltaTime = 0.0;
 
 // ===== 控制台初始化 =====
 void InitConsole() {
@@ -69,15 +75,16 @@ void InitConsole() {
 
     SetConsoleActiveScreenBuffer(hBuffer[0]);
     currentFront = 0;
+
+    QueryPerformanceFrequency(&freq);
+    QueryPerformanceCounter(&lastTime);
 }
 
-// ===== 窗口前台检测 =====
 bool IsConsoleForeground() {
     HWND hwnd = GetConsoleWindow();
     return (GetForegroundWindow() == hwnd);
 }
 
-// ===== 绘制 =====
 void Draw() {
     int back = 1 - currentFront;
     HANDLE hBack = hBuffer[back];
@@ -129,8 +136,7 @@ void Draw() {
     currentFront = back;
 }
 
-// ===== 更新（每帧） =====
-void Update() {
+void PhysicsUpdate() {
     double currentSpeed = BASE_SPEED + score * SPEED_PER_SCORE;
     if (currentSpeed > MAX_SPEED) currentSpeed = MAX_SPEED;
 
@@ -198,7 +204,6 @@ void Update() {
     }
 }
 
-// ===== 输入 =====
 void UpdateInput() {
     if (!IsConsoleForeground()) {
         spacePressed = false;
@@ -223,7 +228,6 @@ void UpdateInput() {
     }
 }
 
-// ===== 重置 =====
 void ResetGame() {
     gameOver = false;
     score = 0;
@@ -235,7 +239,6 @@ void ResetGame() {
     platforms.push_back(SCREEN_WIDTH - PLATFORM_WIDTH + rand() % 20);
 }
 
-// ===== Game Over =====
 void ShowGameOver() {
     HANDLE hFront = hBuffer[currentFront];
     DWORD written;
@@ -268,7 +271,6 @@ void ShowGameOver() {
     }
 }
 
-// ===== 主循环 =====
 int main() {
     srand((unsigned)time(nullptr));
     InitConsole();
@@ -278,6 +280,8 @@ int main() {
     clock_t lastScoreTime = clock();
     const double SCORE_INTERVAL = 0.1;
 
+    double accumulator = 0.0;
+
     while (true) {
         UpdateInput();
 
@@ -286,7 +290,18 @@ int main() {
             continue;
         }
 
-        Update();
+        LARGE_INTEGER current;
+        QueryPerformanceCounter(&current);
+        deltaTime = (double)(current.QuadPart - lastTime.QuadPart) / (double)freq.QuadPart;
+        lastTime = current;
+        if (deltaTime > 0.05) deltaTime = 0.05;
+
+        accumulator += deltaTime;
+
+        while (accumulator >= PHYSICS_DT) {
+            PhysicsUpdate();
+            accumulator -= PHYSICS_DT;
+        }
 
         clock_t now = clock();
         double elapsed = (double)(now - lastScoreTime) / CLOCKS_PER_SEC;
@@ -296,7 +311,16 @@ int main() {
         }
 
         Draw();
-        Sleep(16);
+
+        static LARGE_INTEGER lastDrawTime = {0};
+        if (lastDrawTime.QuadPart != 0) {
+            double elapsedSinceDraw = (double)(current.QuadPart - lastDrawTime.QuadPart) / (double)freq.QuadPart;
+            double sleepTime = max(0.0, FRAME_TIME - elapsedSinceDraw);
+            if (sleepTime > 0.001) {
+                Sleep((DWORD)(sleepTime * 1000));
+            }
+        }
+        lastDrawTime = current;
     }
 
     return 0;
