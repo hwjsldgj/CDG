@@ -38,7 +38,7 @@ deque<double> platforms;
 
 HANDLE hBuffer[2];
 int currentFront = 0;
-char screen[SCREEN_HEIGHT][SCREEN_WIDTH];
+wchar_t screen[SCREEN_HEIGHT][SCREEN_WIDTH];
 
 LARGE_INTEGER freq, lastScoreTime;
 
@@ -47,12 +47,22 @@ double nextBoostTime = 20.0;
 const double BOOST_INTERVAL = 20.0;
 const double BOOST_FACTOR = 1.15;
 
+// ===== 重置控制台窗口（强制无滚动条） =====
+void ResetConsoleWindow(HANDLE hConsole) {
+    COORD bufferSize = { SCREEN_WIDTH, SCREEN_HEIGHT };
+    SetConsoleScreenBufferSize(hConsole, bufferSize);
+    SMALL_RECT windowRect = { 0, 0, SCREEN_WIDTH - 1, SCREEN_HEIGHT - 1 };
+    SetConsoleWindowInfo(hConsole, TRUE, &windowRect);
+}
+
 // ===== 控制台初始化 =====
 void InitConsole() {
-    // 设置控制台输出代码页为 UTF-8
     SetConsoleOutputCP(65001);
     timeBeginPeriod(1);
-    system("mode con cols=80 lines=25");
+
+    HANDLE hStdOut = GetStdHandle(STD_OUTPUT_HANDLE);
+    ResetConsoleWindow(hStdOut);
+
     HANDLE hStdin = GetStdHandle(STD_INPUT_HANDLE);
     DWORD mode;
     GetConsoleMode(hStdin, &mode);
@@ -62,13 +72,8 @@ void InitConsole() {
     hBuffer[0] = CreateConsoleScreenBuffer(GENERIC_READ | GENERIC_WRITE, 0, NULL, CONSOLE_TEXTMODE_BUFFER, NULL);
     hBuffer[1] = CreateConsoleScreenBuffer(GENERIC_READ | GENERIC_WRITE, 0, NULL, CONSOLE_TEXTMODE_BUFFER, NULL);
 
-    COORD bufferSize = { SCREEN_WIDTH, SCREEN_HEIGHT };
-    SetConsoleScreenBufferSize(hBuffer[0], bufferSize);
-    SetConsoleScreenBufferSize(hBuffer[1], bufferSize);
-
-    SMALL_RECT windowRect = { 0, 0, SCREEN_WIDTH - 1, SCREEN_HEIGHT - 1 };
-    SetConsoleWindowInfo(hBuffer[0], TRUE, &windowRect);
-    SetConsoleWindowInfo(hBuffer[1], TRUE, &windowRect);
+    ResetConsoleWindow(hBuffer[0]);
+    ResetConsoleWindow(hBuffer[1]);
 
     CONSOLE_CURSOR_INFO cursorInfo;
     for (int i = 0; i < 2; i++) {
@@ -90,43 +95,54 @@ bool IsConsoleForeground() {
 }
 
 void Draw() {
-    int back = 1 - currentFront;
-    HANDLE hBack = hBuffer[back];
+    HANDLE hBack = hBuffer[1 - currentFront];
+    ResetConsoleWindow(hBack);
 
-    memset(screen, ' ', sizeof(screen));
+    COORD topLeft = { 0, 0 };
+    SetConsoleCursorPosition(hBack, topLeft);
+
+    // 填充屏幕缓冲区
+    for (int y = 0; y < SCREEN_HEIGHT; ++y)
+        for (int x = 0; x < SCREEN_WIDTH; ++x)
+            screen[y][x] = L' ';
+
     for (int x = 0; x < SCREEN_WIDTH; ++x)
-        screen[GROUND_Y][x] = '-';
+        screen[GROUND_Y][x] = L'-';
 
     int dinoRow = (int)(dinoY + 0.5);
     int topRow = dinoRow - 1;
     if (topRow >= 0 && topRow < SCREEN_HEIGHT)
-        screen[topRow][DINO_X] = 'D';
+        screen[topRow][DINO_X] = L'D';
     if (dinoRow >= 0 && dinoRow < SCREEN_HEIGHT)
-        screen[dinoRow][DINO_X] = 'D';
+        screen[dinoRow][DINO_X] = L'D';
 
     for (double px : platforms) {
         int col = (int)(px + 0.5);
         if (col >= 0 && col < SCREEN_WIDTH) {
-            screen[GROUND_Y][col] = '#';
+            screen[GROUND_Y][col] = L'#';
             if (GROUND_Y - 1 >= 0)
-                screen[GROUND_Y - 1][col] = '#';
+                screen[GROUND_Y - 1][col] = L'#';
         }
     }
 
-    char scoreStr[32];
-    snprintf(scoreStr, sizeof(scoreStr), "得分：%lld", score);
-    int len = strlen(scoreStr);
+    // 得分（右上角）
+    wchar_t scoreStr[32];
+    swprintf(scoreStr, 32, L"得分：%lld", score);
+    int len = wcslen(scoreStr);
     int startX = SCREEN_WIDTH - len - 1;
     if (startX < 0) startX = 0;
-    for (int i = 0; scoreStr[i] && (startX + i) < SCREEN_WIDTH; ++i)
+    for (int i = 0; i < len && (startX + i) < SCREEN_WIDTH; ++i)
         screen[0][startX + i] = scoreStr[i];
 
+    // 逐行写入，避免缓冲区宽度不一致导致的环绕
     DWORD bytesWritten;
-    COORD writeCoord = { 0, 0 };
-    WriteConsoleOutputCharacterA(hBack, &screen[0][0], SCREEN_WIDTH * SCREEN_HEIGHT, writeCoord, &bytesWritten);
+    for (int y = 0; y < SCREEN_HEIGHT; ++y) {
+        COORD pos = { 0, (SHORT)y };
+        WriteConsoleOutputCharacterW(hBack, screen[y], SCREEN_WIDTH, pos, &bytesWritten);
+    }
 
     SetConsoleActiveScreenBuffer(hBack);
-    currentFront = back;
+    currentFront = 1 - currentFront;
 }
 
 void Update() {
@@ -260,17 +276,50 @@ void ResetGame() {
 
 void ShowGameOver() {
     HANDLE hFront = hBuffer[currentFront];
-    DWORD written;
+    ResetConsoleWindow(hFront);
+
     COORD topLeft = { 0, 0 };
-    FillConsoleOutputCharacterA(hFront, ' ', SCREEN_WIDTH * SCREEN_HEIGHT, topLeft, &written);
-    SetConsoleCursorPosition(hFront, { SCREEN_WIDTH / 2 - 6, SCREEN_HEIGHT / 2 });
-    WriteConsoleA(hFront, "游戏结束！", 10, &written, NULL);
-    SetConsoleCursorPosition(hFront, { SCREEN_WIDTH / 2 - 8, SCREEN_HEIGHT / 2 + 1 });
-    char buf[32];
-    snprintf(buf, sizeof(buf), "得分：%lld", score);
-    WriteConsoleA(hFront, buf, strlen(buf), &written, NULL);
-    SetConsoleCursorPosition(hFront, { SCREEN_WIDTH / 2 - 10, SCREEN_HEIGHT / 2 + 2 });
-    WriteConsoleA(hFront, "按 R 键重新开始，ESC 键退出", 34, &written, NULL);
+    DWORD written;
+
+    // 清空屏幕（宽字符）
+    FillConsoleOutputCharacterW(hFront, L' ', SCREEN_WIDTH * SCREEN_HEIGHT, topLeft, &written);
+
+    // 准备宽字符串
+    const wchar_t* title = L"游戏结束！";
+    int titleLen = wcslen(title);
+    int titleCols = titleLen * 2; // 中文字符占2列
+
+    wchar_t scoreBuf[32];
+    swprintf(scoreBuf, 32, L"得分：%lld", score);
+    int scoreLen = wcslen(scoreBuf);
+    int scoreCols = 0;
+    for (int i = 0; i < scoreLen; ++i) {
+        if (scoreBuf[i] >= 0x4E00 && scoreBuf[i] <= 0x9FA5)
+            scoreCols += 2;
+        else
+            scoreCols += 1;
+    }
+
+    const wchar_t* restartMsg = L"按 R 键重新开始，ESC 键退出";
+    int msgLen = wcslen(restartMsg);
+    int msgCols = 0;
+    for (int i = 0; i < msgLen; ++i) {
+        if (restartMsg[i] >= 0x4E00 && restartMsg[i] <= 0x9FA5)
+            msgCols += 2;
+        else
+            msgCols += 1;
+    }
+
+    int centerY = SCREEN_HEIGHT / 2 - 1;
+
+    SetConsoleCursorPosition(hFront, { (SHORT)((SCREEN_WIDTH - titleCols) / 2), (SHORT)centerY });
+    WriteConsoleW(hFront, title, titleLen, &written, NULL);
+
+    SetConsoleCursorPosition(hFront, { (SHORT)((SCREEN_WIDTH - scoreCols) / 2), (SHORT)(centerY + 1) });
+    WriteConsoleW(hFront, scoreBuf, scoreLen, &written, NULL);
+
+    SetConsoleCursorPosition(hFront, { (SHORT)((SCREEN_WIDTH - msgCols) / 2), (SHORT)(centerY + 2) });
+    WriteConsoleW(hFront, restartMsg, msgLen, &written, NULL);
 
     while (true) {
         if (!IsConsoleForeground()) {
