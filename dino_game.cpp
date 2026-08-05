@@ -17,10 +17,9 @@ const int PLATFORM_WIDTH = 1;
 const int PLATFORM_SPEED = 1;
 const double GRAVITY = 0.15;
 
-// 跳跃速度范围（最大速度调低，确保不越顶）
-const double JUMP_VEL_MIN = -0.775;   // 最低跳跃速度（上升2格）
-const double JUMP_VEL_MAX = -0.80;    // 最高跳跃速度（上升约2.13格）
-const double BOOST_ACCEL = -0.13;     // 按住空格时向上加速度
+const double JUMP_VEL_MIN = -0.775;
+const double JUMP_VEL_MAX = -0.80;
+const double BOOST_ACCEL = -0.13;
 
 const int MIN_GAP = 8;
 const int MAX_GAP = 40;
@@ -33,7 +32,6 @@ double dinoY = GROUND_Y;
 double dinoVy = 0.0;
 bool isJumping = false;
 bool spacePressed = false;
-bool reachedMaxSpeed = false;   // 标记是否已达到最大速度
 
 vector<int> platforms;
 
@@ -41,10 +39,8 @@ HANDLE hBuffer[2];
 int currentFront = 0;
 char screen[SCREEN_HEIGHT][SCREEN_WIDTH];
 
-// ---------- 控制台初始化 ----------
 void InitConsole() {
     system("mode con cols=80 lines=25");
-
     HANDLE hStdin = GetStdHandle(STD_INPUT_HANDLE);
     DWORD mode;
     GetConsoleMode(hStdin, &mode);
@@ -73,7 +69,6 @@ void InitConsole() {
     currentFront = 0;
 }
 
-// ---------- 绘制 ----------
 void Draw() {
     int back = 1 - currentFront;
     HANDLE hBack = hBuffer[back];
@@ -118,33 +113,26 @@ void Draw() {
     currentFront = back;
 }
 
-// ---------- 更新 ----------
 void Update(double deltaTime) {
     if (isJumping) {
-        // 重力始终作用
         dinoVy += GRAVITY;
 
-        // 按住空格且未达到最大速度时加速
-        if (spacePressed && !reachedMaxSpeed) {
+        // 只在上升阶段且未达到最大速度时加速
+        if (spacePressed && dinoVy < 0 && dinoVy > JUMP_VEL_MAX) {
             dinoVy += BOOST_ACCEL;
-            if (dinoVy <= JUMP_VEL_MAX) { // 达到或超过最大速度
+            if (dinoVy < JUMP_VEL_MAX)
                 dinoVy = JUMP_VEL_MAX;
-                reachedMaxSpeed = true;   // 标记已达到，后续不再加速
-            }
         }
 
         dinoY += dinoVy;
 
-        // 落地检测
         if (dinoY >= GROUND_Y) {
             dinoY = GROUND_Y;
             dinoVy = 0.0;
             isJumping = false;
-            reachedMaxSpeed = false;   // 重置标志
         }
     }
 
-    // 障碍物左移
     for (int& x : platforms)
         x -= PLATFORM_SPEED;
 
@@ -162,7 +150,6 @@ void Update(double deltaTime) {
         }
     }
 
-    // 碰撞检测
     int dinoLeft = DINO_X;
     int dinoRight = DINO_X + 1;
     int dinoTop = (int)dinoY - 1;
@@ -194,7 +181,6 @@ void Update(double deltaTime) {
     score++;
 }
 
-// ---------- 输入 ----------
 void UpdateInput() {
     bool isSpaceDown = (GetAsyncKeyState(VK_SPACE) & 0x8000) != 0;
 
@@ -202,7 +188,6 @@ void UpdateInput() {
         if (isSpaceDown && !spacePressed) {
             dinoVy = JUMP_VEL_MIN;
             isJumping = true;
-            reachedMaxSpeed = false;   // 新跳跃重置标志
         }
     }
 
@@ -212,7 +197,6 @@ void UpdateInput() {
         exit(0);
 }
 
-// ---------- 重置 ----------
 void ResetGame() {
     gameOver = false;
     score = 0;
@@ -220,12 +204,10 @@ void ResetGame() {
     dinoVy = 0.0;
     isJumping = false;
     spacePressed = false;
-    reachedMaxSpeed = false;
     platforms.clear();
     platforms.push_back(SCREEN_WIDTH - PLATFORM_WIDTH + rand() % 20);
 }
 
-// ---------- 主循环 ----------
 int main() {
     srand((unsigned)time(nullptr));
     InitConsole();
