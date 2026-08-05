@@ -124,8 +124,14 @@ void Update() {
     if (isJumping) {
         if (dinoVy < 0) {
             if (spacePressed) {
-                dinoVy = JUMP_VEL_MAX;
+                // 长按：接近顶部时（dinoY < 5.0）采用与松开相同的减速
+                if (dinoY < 5.0) {
+                    dinoVy += GRAVITY;
+                } else {
+                    dinoVy = JUMP_VEL_MAX;
+                }
             } else {
+                // 松开：始终保持完整重力减速
                 dinoVy += GRAVITY;
             }
         } else {
@@ -146,6 +152,7 @@ void Update() {
         }
     }
 
+    // 障碍物移动
     for (int& x : platforms)
         x -= PLATFORM_SPEED;
 
@@ -162,6 +169,7 @@ void Update() {
         }
     }
 
+    // 碰撞检测（AABB）
     double dinoLeft = DINO_X;
     double dinoRight = DINO_X + 1.0;
     double dinoTop = dinoY - 1.0;
@@ -258,9 +266,8 @@ int main() {
     ResetGame();
     Draw();
 
-    // 计分计时器（每0.1秒加1分）
     clock_t lastScoreTime = clock();
-    const double SCORE_INTERVAL = 0.1; // 秒
+    const double SCORE_INTERVAL = 0.1;
 
     while (true) {
         UpdateInput();
@@ -272,16 +279,14 @@ int main() {
 
         Update();
 
-        // 每0.1秒加1分（每秒加10分，平滑增长）
         clock_t now = clock();
         double elapsed = (double)(now - lastScoreTime) / CLOCKS_PER_SEC;
         if (elapsed >= SCORE_INTERVAL) {
-            score++;                     // 加1分
-            lastScoreTime = now;        // 重置计时（注意：不累加剩余时间，保证精确）
+            score++;
+            lastScoreTime = now;
         }
 
         Draw();
-
         Sleep(16);
     }
 
