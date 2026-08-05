@@ -7,29 +7,96 @@
 #include <cstring>
 #include <cmath>
 #include <ctime>
+#include <fstream>
+#include <sstream>
 
 using namespace std;
 
-// ===== 常量 =====
-const int SCREEN_WIDTH = 80;
-const int SCREEN_HEIGHT = 25;
-const int GROUND_Y = 10;
-const int DINO_X = 5;
-const int PLATFORM_WIDTH = 1;
-const double BASE_SPEED = 0.5;
-const double MAX_SPEED = 1.5;
-const double SPEED_PER_SCORE = 0.0004;
-const double GRAVITY = 0.05;
-const double JUMP_VEL_MAX = -0.42;
-const int MIN_GAP = 8;
-const int MAX_GAP = 40;
-const double COLLISION_DIST_THRESHOLD = 1.0;
+// ===== 全局配置变量（带有硬编码默认值） =====
+// 屏幕与布局
+int SCREEN_WIDTH = 80;
+int SCREEN_HEIGHT = 25;
+int GROUND_Y = 10;
+int DINO_X = 5;
+int PLATFORM_WIDTH = 1;
+
+// 物理与速度
+double BASE_SPEED = 0.5;
+double MAX_SPEED = 1.5;
+double SPEED_PER_SCORE = 0.0004;
+double GRAVITY = 0.05;
+double JUMP_VEL_MAX = -0.42;
+int MIN_GAP = 8;
+int MAX_GAP = 40;
+double COLLISION_DIST_THRESHOLD = 1.0;
+
+// 速度倍增
+double BOOST_INTERVAL = 20.0;
+double BOOST_FACTOR = 1.15;
+double INITIAL_BOOST_TIME = 20.0;
+
+// 时间与帧率
+double PHYSICS_DT = 1.0 / 60.0;
+double TARGET_FPS = 120.0;
+double SCORE_INTERVAL = 0.1;
+
+// 跳跃钳位
+double JUMP_TOP_CLAMP = 4.0;
+double JUMP_BOTTOM_CLAMP = 2.0;
+
+// 障碍物生成
+double GENERATE_THRESHOLD = 10.0;
+double INITIAL_PLATFORM_OFFSET = 5.0;
+
+// ===== 读取配置文件（缺失则使用默认值） =====
+void LoadConfig(const char* filename = "config.ini") {
+    ifstream file(filename);
+    if (!file.is_open()) return; // 使用默认值
+
+    string line;
+    while (getline(file, line)) {
+        if (line.empty() || line[0] == '#' || line[0] == ';') continue;
+        size_t eq = line.find('=');
+        if (eq == string::npos) continue;
+        string key = line.substr(0, eq);
+        string val = line.substr(eq + 1);
+        key.erase(0, key.find_first_not_of(" \t"));
+        key.erase(key.find_last_not_of(" \t") + 1);
+        val.erase(0, val.find_first_not_of(" \t"));
+        val.erase(val.find_last_not_of(" \t") + 1);
+
+        if (key == "SCREEN_WIDTH") SCREEN_WIDTH = stoi(val);
+        else if (key == "SCREEN_HEIGHT") SCREEN_HEIGHT = stoi(val);
+        else if (key == "GROUND_Y") GROUND_Y = stoi(val);
+        else if (key == "DINO_X") DINO_X = stoi(val);
+        else if (key == "PLATFORM_WIDTH") PLATFORM_WIDTH = stoi(val);
+        else if (key == "BASE_SPEED") BASE_SPEED = stod(val);
+        else if (key == "MAX_SPEED") MAX_SPEED = stod(val);
+        else if (key == "SPEED_PER_SCORE") SPEED_PER_SCORE = stod(val);
+        else if (key == "GRAVITY") GRAVITY = stod(val);
+        else if (key == "JUMP_VEL_MAX") JUMP_VEL_MAX = stod(val);
+        else if (key == "MIN_GAP") MIN_GAP = stoi(val);
+        else if (key == "MAX_GAP") MAX_GAP = stoi(val);
+        else if (key == "COLLISION_DIST_THRESHOLD") COLLISION_DIST_THRESHOLD = stod(val);
+        else if (key == "BOOST_INTERVAL") BOOST_INTERVAL = stod(val);
+        else if (key == "BOOST_FACTOR") BOOST_FACTOR = stod(val);
+        else if (key == "INITIAL_BOOST_TIME") INITIAL_BOOST_TIME = stod(val);
+        else if (key == "PHYSICS_DT") PHYSICS_DT = stod(val);
+        else if (key == "TARGET_FPS") TARGET_FPS = stod(val);
+        else if (key == "SCORE_INTERVAL") SCORE_INTERVAL = stod(val);
+        else if (key == "JUMP_TOP_CLAMP") JUMP_TOP_CLAMP = stod(val);
+        else if (key == "JUMP_BOTTOM_CLAMP") JUMP_BOTTOM_CLAMP = stod(val);
+        else if (key == "GENERATE_THRESHOLD") GENERATE_THRESHOLD = stod(val);
+        else if (key == "INITIAL_PLATFORM_OFFSET") INITIAL_PLATFORM_OFFSET = stod(val);
+    }
+    file.close();
+}
 
 // ===== 游戏状态 =====
 bool gameOver = false;
 long long score = 0;
 
-double dinoY = GROUND_Y;
+double dinoY;
 double dinoVy = 0.0;
 bool isJumping = false;
 bool spacePressed = false;
@@ -38,20 +105,18 @@ deque<double> platforms;
 
 HANDLE hBuffer[2];
 int currentFront = 0;
-char screen[SCREEN_HEIGHT][SCREEN_WIDTH];
+char** screen = nullptr;
 
 LARGE_INTEGER freq, lastScoreTime;
 
 double speedMultiplier = 1.0;
-double nextBoostTime = 20.0;
-const double BOOST_INTERVAL = 20.0;
-const double BOOST_FACTOR = 1.15;
+double nextBoostTime;
 
 // ===== 强制重置窗口尺寸 =====
 void ResetConsoleWindow(HANDLE hConsole) {
-    COORD bufferSize = { SCREEN_WIDTH, SCREEN_HEIGHT };
+    COORD bufferSize = { (SHORT)SCREEN_WIDTH, (SHORT)SCREEN_HEIGHT };
     SetConsoleScreenBufferSize(hConsole, bufferSize);
-    SMALL_RECT windowRect = { 0, 0, SCREEN_WIDTH - 1, SCREEN_HEIGHT - 1 };
+    SMALL_RECT windowRect = { 0, 0, (SHORT)(SCREEN_WIDTH - 1), (SHORT)(SCREEN_HEIGHT - 1) };
     SetConsoleWindowInfo(hConsole, TRUE, &windowRect);
 }
 
@@ -68,7 +133,9 @@ void EnsureBufferSize(HANDLE hConsole) {
 void InitConsole() {
     SetConsoleOutputCP(65001);
     timeBeginPeriod(1);
-    system("mode con cols=80 lines=25");
+
+    string cmd = "mode con cols=" + to_string(SCREEN_WIDTH) + " lines=" + to_string(SCREEN_HEIGHT);
+    system(cmd.c_str());
 
     HANDLE hStdin = GetStdHandle(STD_INPUT_HANDLE);
     DWORD mode;
@@ -94,6 +161,10 @@ void InitConsole() {
 
     QueryPerformanceFrequency(&freq);
     QueryPerformanceCounter(&lastScoreTime);
+
+    screen = new char*[SCREEN_HEIGHT];
+    for (int i = 0; i < SCREEN_HEIGHT; ++i)
+        screen[i] = new char[SCREEN_WIDTH];
 }
 
 bool IsConsoleForeground() {
@@ -105,10 +176,11 @@ void Draw() {
     int back = 1 - currentFront;
     HANDLE hBack = hBuffer[back];
 
-    // 确保后台缓冲区尺寸正确
     EnsureBufferSize(hBack);
 
-    memset(screen, ' ', sizeof(screen));
+    for (int y = 0; y < SCREEN_HEIGHT; ++y)
+        memset(screen[y], ' ', SCREEN_WIDTH);
+
     for (int x = 0; x < SCREEN_WIDTH; ++x)
         screen[GROUND_Y][x] = '-';
 
@@ -136,7 +208,6 @@ void Draw() {
     for (int i = 0; i < len && (startX + i) < SCREEN_WIDTH; ++i)
         screen[0][startX + i] = scoreStr[i];
 
-    // 逐行写入，避免环绕
     DWORD bytesWritten;
     for (int y = 0; y < SCREEN_HEIGHT; ++y) {
         COORD pos = { 0, (SHORT)y };
@@ -173,7 +244,7 @@ void Update() {
     if (isJumping) {
         if (dinoVy < 0) {
             if (spacePressed) {
-                if (dinoY < 4.0) {
+                if (dinoY < JUMP_TOP_CLAMP) {
                     dinoVy += GRAVITY;
                 } else {
                     dinoVy = JUMP_VEL_MAX;
@@ -187,8 +258,8 @@ void Update() {
 
         dinoY += dinoVy;
 
-        if (dinoY < 2.0) {
-            dinoY = 2.0;
+        if (dinoY < JUMP_BOTTOM_CLAMP) {
+            dinoY = JUMP_BOTTOM_CLAMP;
             dinoVy = 0.0;
         }
 
@@ -210,7 +281,7 @@ void Update() {
         platforms.push_back(SCREEN_WIDTH - PLATFORM_WIDTH);
     } else {
         double lastX = platforms.back();
-        if (lastX + PLATFORM_WIDTH < SCREEN_WIDTH - 10) {
+        if (lastX + PLATFORM_WIDTH < SCREEN_WIDTH - GENERATE_THRESHOLD) {
             int gap = MIN_GAP + rand() % (MAX_GAP - MIN_GAP + 1);
             platforms.push_back(lastX + PLATFORM_WIDTH + gap);
         }
@@ -268,9 +339,9 @@ void ResetGame() {
     isJumping = false;
     spacePressed = false;
     platforms.clear();
-    platforms.push_back(SCREEN_WIDTH - PLATFORM_WIDTH - 5.0);
+    platforms.push_back(SCREEN_WIDTH - PLATFORM_WIDTH - INITIAL_PLATFORM_OFFSET);
     speedMultiplier = 1.0;
-    nextBoostTime = 20.0;
+    nextBoostTime = INITIAL_BOOST_TIME;
     QueryPerformanceCounter(&lastScoreTime);
     static LARGE_INTEGER lastTime = {0};
     lastTime.QuadPart = 0;
@@ -280,12 +351,10 @@ void ShowGameOver() {
     HANDLE hFront = hBuffer[currentFront];
     EnsureBufferSize(hFront);
 
-    // 清屏（宽字符）
     DWORD written;
     COORD topLeft = { 0, 0 };
     FillConsoleOutputCharacterW(hFront, L' ', SCREEN_WIDTH * SCREEN_HEIGHT, topLeft, &written);
 
-    // 中文字符串
     const wchar_t* title = L"游戏结束！";
     int titleLen = wcslen(title);
     int titleCols = 0;
@@ -348,13 +417,18 @@ void ShowGameOver() {
 }
 
 int main() {
+    // 加载配置（若文件缺失则使用硬编码默认值）
+    LoadConfig();
+
+    // 初始化依赖 GROUND_Y 的变量
+    dinoY = GROUND_Y;
+    nextBoostTime = INITIAL_BOOST_TIME;
+
     srand((unsigned)time(nullptr));
     InitConsole();
     ResetGame();
     Draw();
 
-    const double SCORE_INTERVAL = 0.1;
-    const double PHYSICS_DT = 1.0 / 60.0;
     double accumulator = 0.0;
     LARGE_INTEGER lastPhysicsTime;
     QueryPerformanceCounter(&lastPhysicsTime);
@@ -390,13 +464,17 @@ int main() {
         static LARGE_INTEGER lastDrawTime = {0};
         if (lastDrawTime.QuadPart != 0) {
             double elapsedSinceDraw = (double)(now.QuadPart - lastDrawTime.QuadPart) / (double)freq.QuadPart;
-            double sleepTime = max(0.0, 1.0 / 120.0 - elapsedSinceDraw);
+            double sleepTime = max(0.0, 1.0 / TARGET_FPS - elapsedSinceDraw);
             if (sleepTime > 0.001) {
                 Sleep((DWORD)(sleepTime * 1000));
             }
         }
         lastDrawTime = now;
     }
+
+    for (int i = 0; i < SCREEN_HEIGHT; ++i)
+        delete[] screen[i];
+    delete[] screen;
 
     timeEndPeriod(1);
     return 0;
