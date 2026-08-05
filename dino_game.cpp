@@ -11,26 +11,20 @@ using namespace std;
 // ===== 参数配置 =====
 const int SCREEN_WIDTH = 80;
 const int SCREEN_HEIGHT = 25;
-const int GROUND_Y = 10;            // 地面行
-const int DINO_X = 5;               // 恐龙固定列
-const int PLATFORM_WIDTH = 1;       // 障碍物宽度（格）
+const int GROUND_Y = 10;
+const int DINO_X = 5;
+const int PLATFORM_WIDTH = 1;
 const int PLATFORM_SPEED = 1;
-const double GRAVITY = 0.15;        // 降低重力，使跳跃更缓
+const double GRAVITY = 0.15;
 
-// 跳跃速度范围（对应上升高度 2 ~ 8.1 格）
-const double JUMP_VEL_MIN = -0.775; // 最低跳跃速度（上升2格）
-const double JUMP_VEL_MAX = -1.56;  // 最高跳跃速度（上升~8.1格，保持原最高点）
-
-// 按压时间阈值（秒），超过此时间达到最高速度
-const double MAX_PRESS_TIME = 0.3;
-
-const int DINO_HEIGHT = 2;
-const int OBSTACLE_HEIGHT = 2;
+// 跳跃速度范围
+const double JUMP_VEL_MIN = -0.775;   // 最低跳跃速度（上升2格）
+const double JUMP_VEL_MAX = -1.56;    // 最高跳跃速度（上升~8.1格）
+const double BOOST_ACCEL = -0.12;     // 按住空格时每帧额外向上的加速度
 
 const int MIN_GAP = 8;
 const int MAX_GAP = 40;
-
-const double COLLISION_DIST_THRESHOLD = 1.0;  // 碰撞距离阈值（格）
+const double COLLISION_DIST_THRESHOLD = 1.0;
 
 bool gameOver = false;
 int score = 0;
@@ -39,9 +33,7 @@ double dinoY = GROUND_Y;
 double dinoVy = 0.0;
 bool isJumping = false;
 
-// 按压状态
-bool spacePressed = false;
-double pressTime = 0.0;
+bool spacePressed = false;   // 空格是否正被按住
 
 vector<int> platforms;
 
@@ -101,7 +93,7 @@ void Draw() {
     if (dinoRow >= 0 && dinoRow < SCREEN_HEIGHT)
         screen[dinoRow][DINO_X] = 'D';
 
-    // 障碍物
+    // 障碍物（两格高，一格宽）
     for (int px : platforms) {
         int col = px;
         if (col >= 0 && col < SCREEN_WIDTH) {
@@ -130,17 +122,21 @@ void Draw() {
 
 // ---------- 更新 ----------
 void Update(double deltaTime) {
-    // 处理按压累积（仅当在地面且未跳跃时）
-    if (spacePressed && !isJumping && dinoY >= GROUND_Y) {
-        pressTime += deltaTime;
-        if (pressTime > MAX_PRESS_TIME)
-            pressTime = MAX_PRESS_TIME;
-    }
-
-    // 物理
+    // 物理更新
     if (isJumping) {
+        // 重力
         dinoVy += GRAVITY;
+
+        // 如果按住空格，则额外向上加速（但不超过最大速度）
+        if (spacePressed) {
+            dinoVy += BOOST_ACCEL;
+            if (dinoVy < JUMP_VEL_MAX)   // 限制最大上升速度
+                dinoVy = JUMP_VEL_MAX;
+        }
+
         dinoY += dinoVy;
+
+        // 落地检测
         if (dinoY >= GROUND_Y) {
             dinoY = GROUND_Y;
             dinoVy = 0.0;
@@ -167,7 +163,7 @@ void Update(double deltaTime) {
         }
     }
 
-    // 碰撞检测（提前判定，水平距离 < 1）
+    // 碰撞检测（水平距离 < 1.0）
     int dinoLeft = DINO_X;
     int dinoRight = DINO_X + 1;
     int dinoTop = (int)dinoY - 1;
@@ -199,65 +195,25 @@ void Update(double deltaTime) {
     score++;
 }
 
-// ---------- 输入处理 ----------
-void HandleInput() {
-    if (_kbhit()) {
-        char ch = _getch();
-        // 处理空格按下
-        if (ch == ' ') {
-            // 只有在地面且未跳跃时才记录按压开始
-            if (!isJumping && dinoY >= GROUND_Y) {
-                if (!spacePressed) {
-                    spacePressed = true;
-                    pressTime = 0.0;
-                }
-                // 如果已经按下，不做其他操作（持续累积在Update中）
-            }
-        }
-        // 处理空格释放（在_conio中无法直接检测释放，我们通过检测其他按键或每帧重置状态？）
-        // 但我们可以在每次循环中检测是否仍按住，但_conio不支持，所以改用：当检测到非空格按键时视为释放，或使用定时器。
-        // 更简单的方法：在每次调用HandleInput时，如果检测到空格按下，设置标记，但无法检测释放。
-        // 可以采用：每次循环开始时将spacePressed设为false，然后检测_kbhit，如果按键是空格则设为true，这样每帧只能检测一次，且只有按下时触发。
-        // 但这样无法累积按压时间，因为按压时间需要在按住时每帧增加。
-        // 解决方案：使用GetAsyncKeyState(VK_SPACE)检测是否按住，而不依赖_kbhit。
-        // 更改为Windows API检测按键状态。
-    }
-}
-
-// 改进输入检测：使用GetAsyncKeyState实时检测空格按住状态
+// ---------- 输入处理（使用GetAsyncKeyState实时检测） ----------
 void UpdateInput() {
-    // 检测空格是否被按住（高位表示当前被按下）
+    // 检测空格是否被按住
     bool isSpaceDown = (GetAsyncKeyState(VK_SPACE) & 0x8000) != 0;
 
-    // 如果在地面且未跳跃
+    // 如果在地面且未跳跃，按下空格立即起跳
     if (!isJumping && dinoY >= GROUND_Y) {
-        if (isSpaceDown) {
-            // 按住状态，累积时间
-            if (!spacePressed) {
-                spacePressed = true;
-                pressTime = 0.0;
-            }
-            // pressTime在Update中累积
-        } else {
-            // 释放空格
-            if (spacePressed) {
-                // 触发跳跃，计算速度
-                double ratio = pressTime / MAX_PRESS_TIME;
-                if (ratio > 1.0) ratio = 1.0;
-                double velocity = JUMP_VEL_MIN + (JUMP_VEL_MAX - JUMP_VEL_MIN) * ratio;
-                dinoVy = velocity;
-                isJumping = true;
-                spacePressed = false;
-                pressTime = 0.0;
-            }
-        }
-    } else {
-        // 在空中，忽略按压，但重置标记以防止干扰
-        if (spacePressed) {
-            spacePressed = false;
-            pressTime = 0.0;
+        if (isSpaceDown && !spacePressed) {
+            // 按下瞬间起跳，给予最低速度
+            dinoVy = JUMP_VEL_MIN;
+            isJumping = true;
+            spacePressed = true;
         }
     }
+
+    // 更新空格状态（用于跳跃过程中持续加速）
+    spacePressed = isSpaceDown;   // 如果按住，spacePressed保持true
+
+    // 如果跳跃过程中松开空格，spacePressed会被置false（已在上面更新）
 
     // ESC退出
     if (GetAsyncKeyState(VK_ESCAPE) & 0x8000)
@@ -272,7 +228,6 @@ void ResetGame() {
     dinoVy = 0.0;
     isJumping = false;
     spacePressed = false;
-    pressTime = 0.0;
     platforms.clear();
     platforms.push_back(SCREEN_WIDTH - PLATFORM_WIDTH + rand() % 20);
 }
@@ -284,8 +239,7 @@ int main() {
     ResetGame();
     Draw();
 
-    // 帧计时
-    const double frameTime = 0.03; // 约33ms
+    const double frameTime = 0.03;
 
     while (true) {
         if (gameOver) {
@@ -318,8 +272,8 @@ int main() {
             continue;
         }
 
-        UpdateInput();          // 处理空格按压状态
-        Update(frameTime);      // 传入固定帧时长
+        UpdateInput();
+        Update(frameTime);
         Draw();
         Sleep((DWORD)(frameTime * 1000));
     }
