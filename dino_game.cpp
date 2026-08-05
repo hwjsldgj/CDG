@@ -13,60 +13,93 @@
 using namespace std;
 
 // ======================================================================
-// 全局配置变量（内置默认值，可由 config.ini 覆盖）
+// 游戏配置结构体（对应 config.ini 所有参数，并提供默认值）
 // ======================================================================
+struct GameConfig {
+    // ---------- 功能开关 ----------
+    bool ENABLE_BOOST = true;
+    bool ENABLE_LINEAR_SPEED = true;
+    bool ENABLE_HOLD_JUMP = true;
+    bool ENABLE_OBSTACLES = true;
+    bool ENABLE_COLLISION = true;
+    bool ENABLE_SCORING = true;
 
-// ---------- 功能开关 ----------
-bool ENABLE_BOOST = true;               // 启用速度倍增
-bool ENABLE_LINEAR_SPEED = true;        // 启用线性速度增长
-bool ENABLE_HOLD_JUMP = true;           // 启用长按跳跃加速
-bool ENABLE_OBSTACLES = true;           // 启用障碍物生成
-bool ENABLE_COLLISION = true;           // 启用碰撞检测
-bool ENABLE_SCORING = true;             // 启用计分
+    // ---------- 屏幕与布局 ----------
+    int SCREEN_WIDTH = 80;
+    int SCREEN_HEIGHT = 25;
+    int GROUND_Y = 10;
+    int DINO_X = 5;
+    int PLATFORM_WIDTH = 1;
 
-// ---------- 屏幕与布局 ----------
-int SCREEN_WIDTH = 80;      // 窗口宽度（列）
-int SCREEN_HEIGHT = 25;     // 窗口高度（行）
-int GROUND_Y = 10;          // 地面所在行
-int DINO_X = 5;             // 恐龙固定列
-int PLATFORM_WIDTH = 1;     // 障碍物宽度（格）
+    // ---------- 物理与速度 ----------
+    double BASE_SPEED = 0.5;
+    double MAX_SPEED = 1.5;
+    double SPEED_PER_SCORE = 0.0004;
+    double GRAVITY = 0.05;
+    double JUMP_VEL_MAX = -0.42;
+    int MIN_GAP = 8;
+    int MAX_GAP = 40;
+    double COLLISION_DIST_THRESHOLD = 1.0;
 
-// ---------- 物理与速度 ----------
-double BASE_SPEED = 0.5;                // 基础速度（格/帧）
-double MAX_SPEED = 1.5;                 // 速度上限
-double SPEED_PER_SCORE = 0.0004;        // 每分速度增量
-double GRAVITY = 0.05;                  // 重力（每帧速度增量）
-double JUMP_VEL_MAX = -0.42;            // 起跳初速度（负值向上）
-int MIN_GAP = 8;                        // 障碍物最小间距
-int MAX_GAP = 40;                       // 障碍物最大间距
-double COLLISION_DIST_THRESHOLD = 1.0;  // 碰撞水平距离阈值
+    // ---------- 速度倍增 ----------
+    double BOOST_INTERVAL = 20.0;
+    double BOOST_FACTOR = 1.15;
+    double INITIAL_BOOST_TIME = 20.0;
 
-// ---------- 速度倍增 ----------
-double BOOST_INTERVAL = 20.0;           // 速度倍增间隔（秒）
-double BOOST_FACTOR = 1.15;             // 速度倍增系数
-double INITIAL_BOOST_TIME = 20.0;       // 第一次倍增触发时间
+    // ---------- 时间与帧率 ----------
+    double PHYSICS_DT = 1.0 / 60.0;
+    double TARGET_FPS = 120.0;
+    double SCORE_INTERVAL = 0.1;
 
-// ---------- 时间与帧率 ----------
-double PHYSICS_DT = 1.0 / 60.0;         // 物理步长（秒）
-double TARGET_FPS = 120.0;              // 目标渲染帧率
-double SCORE_INTERVAL = 0.1;            // 计分间隔（秒）
+    // ---------- 跳跃钳位 ----------
+    double JUMP_TOP_CLAMP = 4.0;
+    double JUMP_BOTTOM_CLAMP = 2.0;
 
-// ---------- 跳跃钳位 ----------
-double JUMP_TOP_CLAMP = 4.0;            // 上升减速起始高度
-double JUMP_BOTTOM_CLAMP = 2.0;         // 最小高度（防止穿顶）
+    // ---------- 障碍物生成 ----------
+    double GENERATE_THRESHOLD = 10.0;
+    double INITIAL_PLATFORM_OFFSET = 5.0;
+};
 
-// ---------- 障碍物生成 ----------
-double GENERATE_THRESHOLD = 10.0;       // 生成新障碍的右端距离阈值
-double INITIAL_PLATFORM_OFFSET = 5.0;   // 初始障碍物偏移
+// ======================================================================
+// 游戏状态结构体（所有运行时变量）
+// ======================================================================
+struct GameState {
+    bool gameOver = false;
+    long long score = 0;
+
+    double dinoY;
+    double dinoVy = 0.0;
+    bool isJumping = false;
+    bool spacePressed = false;
+
+    deque<double> platforms;
+
+    HANDLE hBuffer[2];
+    int currentFront = 0;
+    char** screen = nullptr;
+
+    LARGE_INTEGER freq, lastScoreTime;
+
+    double speedMultiplier = 1.0;
+    double nextBoostTime;
+
+    // 外部控制预留（未来可通过网络修改）
+    // void* externalData; // 可扩展
+};
+
+// ======================================================================
+// 全局实例
+// ======================================================================
+GameConfig g_config;
+GameState g_state;
 
 // ======================================================================
 // 函数：LoadConfig
-// 描述：从 config.ini 读取配置，若文件缺失或某参数未定义则跳过，
-//       保留已有的默认值。所有参数均为可选。
+// 描述：从 config.ini 读取配置，覆盖 g_config 默认值
 // ======================================================================
 void LoadConfig(const char* filename = "config.ini") {
     ifstream file(filename);
-    if (!file.is_open()) return; // 无配置文件则使用默认值
+    if (!file.is_open()) return;
 
     string line;
     while (getline(file, line)) {
@@ -75,67 +108,68 @@ void LoadConfig(const char* filename = "config.ini") {
         if (eq == string::npos) continue;
         string key = line.substr(0, eq);
         string val = line.substr(eq + 1);
-        // 去除首尾空格
         key.erase(0, key.find_first_not_of(" \t"));
         key.erase(key.find_last_not_of(" \t") + 1);
         val.erase(0, val.find_first_not_of(" \t"));
         val.erase(val.find_last_not_of(" \t") + 1);
 
-        // 逐一匹配并覆盖全局变量
-        if (key == "ENABLE_BOOST") ENABLE_BOOST = (stoi(val) != 0);
-        else if (key == "ENABLE_LINEAR_SPEED") ENABLE_LINEAR_SPEED = (stoi(val) != 0);
-        else if (key == "ENABLE_HOLD_JUMP") ENABLE_HOLD_JUMP = (stoi(val) != 0);
-        else if (key == "ENABLE_OBSTACLES") ENABLE_OBSTACLES = (stoi(val) != 0);
-        else if (key == "ENABLE_COLLISION") ENABLE_COLLISION = (stoi(val) != 0);
-        else if (key == "ENABLE_SCORING") ENABLE_SCORING = (stoi(val) != 0);
-        else if (key == "SCREEN_WIDTH") SCREEN_WIDTH = stoi(val);
-        else if (key == "SCREEN_HEIGHT") SCREEN_HEIGHT = stoi(val);
-        else if (key == "GROUND_Y") GROUND_Y = stoi(val);
-        else if (key == "DINO_X") DINO_X = stoi(val);
-        else if (key == "PLATFORM_WIDTH") PLATFORM_WIDTH = stoi(val);
-        else if (key == "BASE_SPEED") BASE_SPEED = stod(val);
-        else if (key == "MAX_SPEED") MAX_SPEED = stod(val);
-        else if (key == "SPEED_PER_SCORE") SPEED_PER_SCORE = stod(val);
-        else if (key == "GRAVITY") GRAVITY = stod(val);
-        else if (key == "JUMP_VEL_MAX") JUMP_VEL_MAX = stod(val);
-        else if (key == "MIN_GAP") MIN_GAP = stoi(val);
-        else if (key == "MAX_GAP") MAX_GAP = stoi(val);
-        else if (key == "COLLISION_DIST_THRESHOLD") COLLISION_DIST_THRESHOLD = stod(val);
-        else if (key == "BOOST_INTERVAL") BOOST_INTERVAL = stod(val);
-        else if (key == "BOOST_FACTOR") BOOST_FACTOR = stod(val);
-        else if (key == "INITIAL_BOOST_TIME") INITIAL_BOOST_TIME = stod(val);
-        else if (key == "PHYSICS_DT") PHYSICS_DT = stod(val);
-        else if (key == "TARGET_FPS") TARGET_FPS = stod(val);
-        else if (key == "SCORE_INTERVAL") SCORE_INTERVAL = stod(val);
-        else if (key == "JUMP_TOP_CLAMP") JUMP_TOP_CLAMP = stod(val);
-        else if (key == "JUMP_BOTTOM_CLAMP") JUMP_BOTTOM_CLAMP = stod(val);
-        else if (key == "GENERATE_THRESHOLD") GENERATE_THRESHOLD = stod(val);
-        else if (key == "INITIAL_PLATFORM_OFFSET") INITIAL_PLATFORM_OFFSET = stod(val);
+        // 配置覆盖
+        if (key == "ENABLE_BOOST") g_config.ENABLE_BOOST = (stoi(val) != 0);
+        else if (key == "ENABLE_LINEAR_SPEED") g_config.ENABLE_LINEAR_SPEED = (stoi(val) != 0);
+        else if (key == "ENABLE_HOLD_JUMP") g_config.ENABLE_HOLD_JUMP = (stoi(val) != 0);
+        else if (key == "ENABLE_OBSTACLES") g_config.ENABLE_OBSTACLES = (stoi(val) != 0);
+        else if (key == "ENABLE_COLLISION") g_config.ENABLE_COLLISION = (stoi(val) != 0);
+        else if (key == "ENABLE_SCORING") g_config.ENABLE_SCORING = (stoi(val) != 0);
+        else if (key == "SCREEN_WIDTH") g_config.SCREEN_WIDTH = stoi(val);
+        else if (key == "SCREEN_HEIGHT") g_config.SCREEN_HEIGHT = stoi(val);
+        else if (key == "GROUND_Y") g_config.GROUND_Y = stoi(val);
+        else if (key == "DINO_X") g_config.DINO_X = stoi(val);
+        else if (key == "PLATFORM_WIDTH") g_config.PLATFORM_WIDTH = stoi(val);
+        else if (key == "BASE_SPEED") g_config.BASE_SPEED = stod(val);
+        else if (key == "MAX_SPEED") g_config.MAX_SPEED = stod(val);
+        else if (key == "SPEED_PER_SCORE") g_config.SPEED_PER_SCORE = stod(val);
+        else if (key == "GRAVITY") g_config.GRAVITY = stod(val);
+        else if (key == "JUMP_VEL_MAX") g_config.JUMP_VEL_MAX = stod(val);
+        else if (key == "MIN_GAP") g_config.MIN_GAP = stoi(val);
+        else if (key == "MAX_GAP") g_config.MAX_GAP = stoi(val);
+        else if (key == "COLLISION_DIST_THRESHOLD") g_config.COLLISION_DIST_THRESHOLD = stod(val);
+        else if (key == "BOOST_INTERVAL") g_config.BOOST_INTERVAL = stod(val);
+        else if (key == "BOOST_FACTOR") g_config.BOOST_FACTOR = stod(val);
+        else if (key == "INITIAL_BOOST_TIME") g_config.INITIAL_BOOST_TIME = stod(val);
+        else if (key == "PHYSICS_DT") g_config.PHYSICS_DT = stod(val);
+        else if (key == "TARGET_FPS") g_config.TARGET_FPS = stod(val);
+        else if (key == "SCORE_INTERVAL") g_config.SCORE_INTERVAL = stod(val);
+        else if (key == "JUMP_TOP_CLAMP") g_config.JUMP_TOP_CLAMP = stod(val);
+        else if (key == "JUMP_BOTTOM_CLAMP") g_config.JUMP_BOTTOM_CLAMP = stod(val);
+        else if (key == "GENERATE_THRESHOLD") g_config.GENERATE_THRESHOLD = stod(val);
+        else if (key == "INITIAL_PLATFORM_OFFSET") g_config.INITIAL_PLATFORM_OFFSET = stod(val);
     }
     file.close();
 }
 
 // ======================================================================
-// 游戏状态变量
+// 外部控制接口（占位，供未来网页/开发者工具调用）
 // ======================================================================
-bool gameOver = false;          // 游戏是否结束
-long long score = 0;            // 当前得分
+/**
+ * 设置游戏参数（可用于实时调整难度、开关等）
+ * @param key 参数名（与 config.ini 或状态名对应）
+ * @param value 新值（字符串形式，自动转换）
+ */
+void ExternalSetParam(const string& key, const string& value) {
+    // 示例：未来可通过网络调用此函数
+    // 目前仅作占位，可在此添加对 g_config 或 g_state 的修改
+    // 例如：if (key == "BASE_SPEED") g_config.BASE_SPEED = stod(value);
+    // 注意：修改后可能需立即生效，需配合游戏循环更新
+}
 
-double dinoY;                   // 恐龙底部纵坐标（浮点）
-double dinoVy = 0.0;            // 垂直速度
-bool isJumping = false;         // 是否跳跃中
-bool spacePressed = false;      // 空格是否按下
-
-deque<double> platforms;        // 障碍物横坐标队列（浮点）
-
-HANDLE hBuffer[2];              // 双缓冲句柄
-int currentFront = 0;           // 当前前台缓冲区索引
-char** screen = nullptr;        // 屏幕字符矩阵（动态分配）
-
-LARGE_INTEGER freq, lastScoreTime; // 性能计数器频率、上次计分时刻
-
-double speedMultiplier = 1.0;   // 速度倍增因子
-double nextBoostTime;           // 下次触发倍增的时刻
+/**
+ * 获取当前游戏状态（用于网页可视化）
+ * 返回 JSON 字符串，便于前端解析
+ */
+string ExternalGetStateJSON() {
+    // 占位，未来可返回 g_state 的序列化数据
+    return "{}";
+}
 
 // ======================================================================
 // 控制台窗口管理
@@ -146,9 +180,9 @@ double nextBoostTime;           // 下次触发倍增的时刻
  * @param hConsole 控制台缓冲区句柄
  */
 void ResetConsoleWindow(HANDLE hConsole) {
-    COORD bufferSize = { (SHORT)SCREEN_WIDTH, (SHORT)SCREEN_HEIGHT };
+    COORD bufferSize = { (SHORT)g_config.SCREEN_WIDTH, (SHORT)g_config.SCREEN_HEIGHT };
     SetConsoleScreenBufferSize(hConsole, bufferSize);
-    SMALL_RECT windowRect = { 0, 0, (SHORT)(SCREEN_WIDTH - 1), (SHORT)(SCREEN_HEIGHT - 1) };
+    SMALL_RECT windowRect = { 0, 0, (SHORT)(g_config.SCREEN_WIDTH - 1), (SHORT)(g_config.SCREEN_HEIGHT - 1) };
     SetConsoleWindowInfo(hConsole, TRUE, &windowRect);
 }
 
@@ -158,7 +192,7 @@ void ResetConsoleWindow(HANDLE hConsole) {
 void EnsureBufferSize(HANDLE hConsole) {
     CONSOLE_SCREEN_BUFFER_INFO csbi;
     if (!GetConsoleScreenBufferInfo(hConsole, &csbi)) return;
-    if (csbi.dwSize.X != SCREEN_WIDTH || csbi.dwSize.Y != SCREEN_HEIGHT) {
+    if (csbi.dwSize.X != g_config.SCREEN_WIDTH || csbi.dwSize.Y != g_config.SCREEN_HEIGHT) {
         ResetConsoleWindow(hConsole);
     }
 }
@@ -167,223 +201,196 @@ void EnsureBufferSize(HANDLE hConsole) {
 // 控制台初始化
 // ======================================================================
 void InitConsole() {
-    SetConsoleOutputCP(65001);              // 设置 UTF-8 输出
-    timeBeginPeriod(1);                     // 提升定时器精度至 1ms
+    SetConsoleOutputCP(65001);
+    timeBeginPeriod(1);
 
-    // 用 system 命令调整窗口大小（兼容旧版）
-    string cmd = "mode con cols=" + to_string(SCREEN_WIDTH) + " lines=" + to_string(SCREEN_HEIGHT);
+    string cmd = "mode con cols=" + to_string(g_config.SCREEN_WIDTH) + " lines=" + to_string(g_config.SCREEN_HEIGHT);
     system(cmd.c_str());
 
-    // 禁用快速编辑模式（防止阻塞输入）
     HANDLE hStdin = GetStdHandle(STD_INPUT_HANDLE);
     DWORD mode;
     GetConsoleMode(hStdin, &mode);
     mode &= ~ENABLE_QUICK_EDIT_MODE;
     SetConsoleMode(hStdin, mode);
 
-    // 创建两个屏幕缓冲区
-    hBuffer[0] = CreateConsoleScreenBuffer(GENERIC_READ | GENERIC_WRITE, 0, NULL, CONSOLE_TEXTMODE_BUFFER, NULL);
-    hBuffer[1] = CreateConsoleScreenBuffer(GENERIC_READ | GENERIC_WRITE, 0, NULL, CONSOLE_TEXTMODE_BUFFER, NULL);
+    g_state.hBuffer[0] = CreateConsoleScreenBuffer(GENERIC_READ | GENERIC_WRITE, 0, NULL, CONSOLE_TEXTMODE_BUFFER, NULL);
+    g_state.hBuffer[1] = CreateConsoleScreenBuffer(GENERIC_READ | GENERIC_WRITE, 0, NULL, CONSOLE_TEXTMODE_BUFFER, NULL);
 
-    ResetConsoleWindow(hBuffer[0]);
-    ResetConsoleWindow(hBuffer[1]);
+    ResetConsoleWindow(g_state.hBuffer[0]);
+    ResetConsoleWindow(g_state.hBuffer[1]);
 
-    // 隐藏光标
     CONSOLE_CURSOR_INFO cursorInfo;
     for (int i = 0; i < 2; i++) {
-        GetConsoleCursorInfo(hBuffer[i], &cursorInfo);
+        GetConsoleCursorInfo(g_state.hBuffer[i], &cursorInfo);
         cursorInfo.bVisible = FALSE;
-        SetConsoleCursorInfo(hBuffer[i], &cursorInfo);
+        SetConsoleCursorInfo(g_state.hBuffer[i], &cursorInfo);
     }
 
-    SetConsoleActiveScreenBuffer(hBuffer[0]);
-    currentFront = 0;
+    SetConsoleActiveScreenBuffer(g_state.hBuffer[0]);
+    g_state.currentFront = 0;
 
-    QueryPerformanceFrequency(&freq);
-    QueryPerformanceCounter(&lastScoreTime);
+    QueryPerformanceFrequency(&g_state.freq);
+    QueryPerformanceCounter(&g_state.lastScoreTime);
 
-    // 分配屏幕缓冲区（行×列）
-    screen = new char*[SCREEN_HEIGHT];
-    for (int i = 0; i < SCREEN_HEIGHT; ++i)
-        screen[i] = new char[SCREEN_WIDTH];
+    g_state.screen = new char*[g_config.SCREEN_HEIGHT];
+    for (int i = 0; i < g_config.SCREEN_HEIGHT; ++i)
+        g_state.screen[i] = new char[g_config.SCREEN_WIDTH];
 }
 
-// ======================================================================
-// 输入与绘制
-// ======================================================================
-
-/**
- * 检测控制台是否在前台，防止后台按键干扰
- */
 bool IsConsoleForeground() {
     HWND hwnd = GetConsoleWindow();
     return (GetForegroundWindow() == hwnd);
 }
 
-/**
- * 绘制一帧：构建屏幕字符矩阵，逐行写入后台缓冲区，切换显示
- */
+// ======================================================================
+// 绘制
+// ======================================================================
 void Draw() {
-    int back = 1 - currentFront;
-    HANDLE hBack = hBuffer[back];
+    int back = 1 - g_state.currentFront;
+    HANDLE hBack = g_state.hBuffer[back];
 
-    EnsureBufferSize(hBack);  // 确保后台缓冲区尺寸正确
+    EnsureBufferSize(hBack);
 
-    // 清空屏幕矩阵
-    for (int y = 0; y < SCREEN_HEIGHT; ++y)
-        memset(screen[y], ' ', SCREEN_WIDTH);
+    for (int y = 0; y < g_config.SCREEN_HEIGHT; ++y)
+        memset(g_state.screen[y], ' ', g_config.SCREEN_WIDTH);
 
-    // 绘制地面
-    for (int x = 0; x < SCREEN_WIDTH; ++x)
-        screen[GROUND_Y][x] = '-';
+    for (int x = 0; x < g_config.SCREEN_WIDTH; ++x)
+        g_state.screen[g_config.GROUND_Y][x] = '-';
 
-    // 绘制恐龙（两格高）
-    int dinoRow = (int)(dinoY + 0.5);
+    int dinoRow = (int)(g_state.dinoY + 0.5);
     int topRow = dinoRow - 1;
-    if (topRow >= 0 && topRow < SCREEN_HEIGHT)
-        screen[topRow][DINO_X] = 'D';
-    if (dinoRow >= 0 && dinoRow < SCREEN_HEIGHT)
-        screen[dinoRow][DINO_X] = 'D';
+    if (topRow >= 0 && topRow < g_config.SCREEN_HEIGHT)
+        g_state.screen[topRow][g_config.DINO_X] = 'D';
+    if (dinoRow >= 0 && dinoRow < g_config.SCREEN_HEIGHT)
+        g_state.screen[dinoRow][g_config.DINO_X] = 'D';
 
-    // 绘制障碍物（受开关控制）
-    if (ENABLE_OBSTACLES) {
-        for (double px : platforms) {
+    if (g_config.ENABLE_OBSTACLES) {
+        for (double px : g_state.platforms) {
             int col = (int)(px + 0.5);
-            if (col >= 0 && col < SCREEN_WIDTH) {
-                screen[GROUND_Y][col] = '#';
-                if (GROUND_Y - 1 >= 0)
-                    screen[GROUND_Y - 1][col] = '#';
+            if (col >= 0 && col < g_config.SCREEN_WIDTH) {
+                g_state.screen[g_config.GROUND_Y][col] = '#';
+                if (g_config.GROUND_Y - 1 >= 0)
+                    g_state.screen[g_config.GROUND_Y - 1][col] = '#';
             }
         }
     }
 
-    // 右上角显示得分（中文）
     char scoreStr[32];
-    snprintf(scoreStr, sizeof(scoreStr), "得分：%lld", score);
+    snprintf(scoreStr, sizeof(scoreStr), "得分：%lld", g_state.score);
     int len = strlen(scoreStr);
-    int startX = SCREEN_WIDTH - len - 1;
+    int startX = g_config.SCREEN_WIDTH - len - 1;
     if (startX < 0) startX = 0;
-    for (int i = 0; i < len && (startX + i) < SCREEN_WIDTH; ++i)
-        screen[0][startX + i] = scoreStr[i];
+    for (int i = 0; i < len && (startX + i) < g_config.SCREEN_WIDTH; ++i)
+        g_state.screen[0][startX + i] = scoreStr[i];
 
-    // 逐行写入后台缓冲区（避免行末环绕）
     DWORD bytesWritten;
-    for (int y = 0; y < SCREEN_HEIGHT; ++y) {
+    for (int y = 0; y < g_config.SCREEN_HEIGHT; ++y) {
         COORD pos = { 0, (SHORT)y };
-        WriteConsoleOutputCharacterA(hBack, screen[y], SCREEN_WIDTH, pos, &bytesWritten);
+        WriteConsoleOutputCharacterA(hBack, g_state.screen[y], g_config.SCREEN_WIDTH, pos, &bytesWritten);
     }
 
-    // 切换显示
     SetConsoleActiveScreenBuffer(hBack);
-    currentFront = back;
+    g_state.currentFront = back;
 }
 
 // ======================================================================
-// 物理更新（每帧调用，固定步长 60Hz）
+// 物理更新
 // ======================================================================
 void Update() {
-    // 计算速度（线性增长 + 倍增）
-    double currentSpeed = BASE_SPEED;
-    if (ENABLE_LINEAR_SPEED) {
-        currentSpeed += score * SPEED_PER_SCORE;
+    double currentSpeed = g_config.BASE_SPEED;
+    if (g_config.ENABLE_LINEAR_SPEED) {
+        currentSpeed += g_state.score * g_config.SPEED_PER_SCORE;
     }
-    currentSpeed *= speedMultiplier;
-    if (currentSpeed > MAX_SPEED) currentSpeed = MAX_SPEED;
+    currentSpeed *= g_state.speedMultiplier;
+    if (currentSpeed > g_config.MAX_SPEED) currentSpeed = g_config.MAX_SPEED;
 
-    // ---------- 速度倍增逻辑 ----------
+    // 速度倍增
     static double currentTime = 0.0;
     static LARGE_INTEGER lastTime = {0};
     LARGE_INTEGER now;
     QueryPerformanceCounter(&now);
     if (lastTime.QuadPart != 0) {
-        double dt = (double)(now.QuadPart - lastTime.QuadPart) / (double)freq.QuadPart;
+        double dt = (double)(now.QuadPart - lastTime.QuadPart) / (double)g_state.freq.QuadPart;
         currentTime += dt;
     }
     lastTime = now;
 
-    if (ENABLE_BOOST && currentTime >= nextBoostTime) {
-        speedMultiplier *= BOOST_FACTOR;
-        // 防止超过最大速度
-        double tempSpeed = (BASE_SPEED + (ENABLE_LINEAR_SPEED ? score * SPEED_PER_SCORE : 0)) * speedMultiplier;
-        if (tempSpeed > MAX_SPEED) {
-            speedMultiplier = MAX_SPEED / (BASE_SPEED + (ENABLE_LINEAR_SPEED ? score * SPEED_PER_SCORE : 0));
-            if (speedMultiplier < 1.0) speedMultiplier = 1.0; // 防止小于1
+    if (g_config.ENABLE_BOOST && currentTime >= g_state.nextBoostTime) {
+        g_state.speedMultiplier *= g_config.BOOST_FACTOR;
+        double tempSpeed = (g_config.BASE_SPEED + (g_config.ENABLE_LINEAR_SPEED ? g_state.score * g_config.SPEED_PER_SCORE : 0)) * g_state.speedMultiplier;
+        if (tempSpeed > g_config.MAX_SPEED) {
+            g_state.speedMultiplier = g_config.MAX_SPEED / (g_config.BASE_SPEED + (g_config.ENABLE_LINEAR_SPEED ? g_state.score * g_config.SPEED_PER_SCORE : 0));
+            if (g_state.speedMultiplier < 1.0) g_state.speedMultiplier = 1.0;
         }
-        nextBoostTime += BOOST_INTERVAL;
+        g_state.nextBoostTime += g_config.BOOST_INTERVAL;
     }
 
-    // ---------- 跳跃物理 ----------
-    if (isJumping) {
-        // 上升段：长按保持最大速度，否则受重力
-        if (dinoVy < 0) {
-            if (ENABLE_HOLD_JUMP && spacePressed) {
-                if (dinoY < JUMP_TOP_CLAMP) {
-                    dinoVy += GRAVITY;   // 接近顶部减速
+    // 跳跃物理
+    if (g_state.isJumping) {
+        if (g_state.dinoVy < 0) {
+            if (g_config.ENABLE_HOLD_JUMP && g_state.spacePressed) {
+                if (g_state.dinoY < g_config.JUMP_TOP_CLAMP) {
+                    g_state.dinoVy += g_config.GRAVITY;
                 } else {
-                    dinoVy = JUMP_VEL_MAX; // 保持最大上升速度
+                    g_state.dinoVy = g_config.JUMP_VEL_MAX;
                 }
             } else {
-                dinoVy += GRAVITY;       // 松开空格，重力减速
+                g_state.dinoVy += g_config.GRAVITY;
             }
         } else {
-            dinoVy += GRAVITY;           // 下降段只受重力
+            g_state.dinoVy += g_config.GRAVITY;
         }
 
-        dinoY += dinoVy;
+        g_state.dinoY += g_state.dinoVy;
 
-        // 防止穿顶
-        if (dinoY < JUMP_BOTTOM_CLAMP) {
-            dinoY = JUMP_BOTTOM_CLAMP;
-            dinoVy = 0.0;
+        if (g_state.dinoY < g_config.JUMP_BOTTOM_CLAMP) {
+            g_state.dinoY = g_config.JUMP_BOTTOM_CLAMP;
+            g_state.dinoVy = 0.0;
         }
 
-        // 落地
-        if (dinoY >= GROUND_Y) {
-            dinoY = GROUND_Y;
-            dinoVy = 0.0;
-            isJumping = false;
+        if (g_state.dinoY >= g_config.GROUND_Y) {
+            g_state.dinoY = g_config.GROUND_Y;
+            g_state.dinoVy = 0.0;
+            g_state.isJumping = false;
         }
     }
 
-    // ---------- 障碍物移动 ----------
-    if (ENABLE_OBSTACLES) {
-        for (double& x : platforms)
+    // 障碍物移动与生成
+    if (g_config.ENABLE_OBSTACLES) {
+        for (double& x : g_state.platforms)
             x -= currentSpeed;
 
-        // 移除移出屏幕左侧的障碍物
-        while (!platforms.empty() && platforms.front() + PLATFORM_WIDTH < 0) {
-            platforms.pop_front();
+        while (!g_state.platforms.empty() && g_state.platforms.front() + g_config.PLATFORM_WIDTH < 0) {
+            g_state.platforms.pop_front();
         }
 
-        // ---------- 障碍物生成 ----------
-        if (platforms.empty()) {
-            platforms.push_back(SCREEN_WIDTH - PLATFORM_WIDTH);
+        if (g_state.platforms.empty()) {
+            g_state.platforms.push_back(g_config.SCREEN_WIDTH - g_config.PLATFORM_WIDTH);
         } else {
-            double lastX = platforms.back();
-            // 当最后一个障碍物离右端足够远时生成新障碍
-            if (lastX + PLATFORM_WIDTH < SCREEN_WIDTH - GENERATE_THRESHOLD) {
-                int gap = MIN_GAP + rand() % (MAX_GAP - MIN_GAP + 1);
-                platforms.push_back(lastX + PLATFORM_WIDTH + gap);
+            double lastX = g_state.platforms.back();
+            if (lastX + g_config.PLATFORM_WIDTH < g_config.SCREEN_WIDTH - g_config.GENERATE_THRESHOLD) {
+                int gap = g_config.MIN_GAP + rand() % (g_config.MAX_GAP - g_config.MIN_GAP + 1);
+                g_state.platforms.push_back(lastX + g_config.PLATFORM_WIDTH + gap);
             }
         }
     }
 
-    // ---------- 碰撞检测（AABB） ----------
-    if (ENABLE_COLLISION && ENABLE_OBSTACLES) {
-        double dinoLeft = DINO_X;
-        double dinoRight = DINO_X + 1.0;
-        double dinoTop = dinoY - 1.0;
-        double dinoBottom = dinoY;
+    // 碰撞检测
+    if (g_config.ENABLE_COLLISION && g_config.ENABLE_OBSTACLES) {
+        double dinoLeft = g_config.DINO_X;
+        double dinoRight = g_config.DINO_X + 1.0;
+        double dinoTop = g_state.dinoY - 1.0;
+        double dinoBottom = g_state.dinoY;
 
-        for (double px : platforms) {
+        for (double px : g_state.platforms) {
             double platLeft = px;
-            double platRight = px + PLATFORM_WIDTH;
-            double platTop = GROUND_Y - 1.0;
-            double platBottom = GROUND_Y;
+            double platRight = px + g_config.PLATFORM_WIDTH;
+            double platTop = g_config.GROUND_Y - 1.0;
+            double platBottom = g_config.GROUND_Y;
 
             if (dinoLeft < platRight && dinoRight > platLeft &&
                 dinoTop < platBottom && dinoBottom > platTop) {
-                gameOver = true;
+                g_state.gameOver = true;
                 break;
             }
         }
@@ -395,26 +402,24 @@ void Update() {
 // ======================================================================
 void UpdateInput() {
     if (!IsConsoleForeground()) {
-        spacePressed = false;
+        g_state.spacePressed = false;
         return;
     }
 
     bool isSpaceDown = (GetAsyncKeyState(VK_SPACE) & 0x8000) != 0;
 
-    // 起跳：仅在地面且刚按下空格时触发
-    if (!isJumping && dinoY >= GROUND_Y) {
-        if (isSpaceDown && !spacePressed) {
-            dinoVy = JUMP_VEL_MAX;
-            isJumping = true;
+    if (!g_state.isJumping && g_state.dinoY >= g_config.GROUND_Y) {
+        if (isSpaceDown && !g_state.spacePressed) {
+            g_state.dinoVy = g_config.JUMP_VEL_MAX;
+            g_state.isJumping = true;
         }
     }
 
-    spacePressed = isSpaceDown;
+    g_state.spacePressed = isSpaceDown;
 
-    // ESC 退出
     if (GetAsyncKeyState(VK_ESCAPE) & 0x8000) {
-        CloseHandle(hBuffer[0]);
-        CloseHandle(hBuffer[1]);
+        CloseHandle(g_state.hBuffer[0]);
+        CloseHandle(g_state.hBuffer[1]);
         timeEndPeriod(1);
         exit(0);
     }
@@ -424,17 +429,17 @@ void UpdateInput() {
 // 游戏重置
 // ======================================================================
 void ResetGame() {
-    gameOver = false;
-    score = 0;
-    dinoY = GROUND_Y;
-    dinoVy = 0.0;
-    isJumping = false;
-    spacePressed = false;
-    platforms.clear();
-    platforms.push_back(SCREEN_WIDTH - PLATFORM_WIDTH - INITIAL_PLATFORM_OFFSET);
-    speedMultiplier = 1.0;
-    nextBoostTime = INITIAL_BOOST_TIME;
-    QueryPerformanceCounter(&lastScoreTime);
+    g_state.gameOver = false;
+    g_state.score = 0;
+    g_state.dinoY = g_config.GROUND_Y;
+    g_state.dinoVy = 0.0;
+    g_state.isJumping = false;
+    g_state.spacePressed = false;
+    g_state.platforms.clear();
+    g_state.platforms.push_back(g_config.SCREEN_WIDTH - g_config.PLATFORM_WIDTH - g_config.INITIAL_PLATFORM_OFFSET);
+    g_state.speedMultiplier = 1.0;
+    g_state.nextBoostTime = g_config.INITIAL_BOOST_TIME;
+    QueryPerformanceCounter(&g_state.lastScoreTime);
     static LARGE_INTEGER lastTime = {0};
     lastTime.QuadPart = 0;
 }
@@ -443,15 +448,13 @@ void ResetGame() {
 // 游戏结束画面
 // ======================================================================
 void ShowGameOver() {
-    HANDLE hFront = hBuffer[currentFront];
+    HANDLE hFront = g_state.hBuffer[g_state.currentFront];
     EnsureBufferSize(hFront);
 
-    // 清空屏幕（宽字符）
     DWORD written;
     COORD topLeft = { 0, 0 };
-    FillConsoleOutputCharacterW(hFront, L' ', SCREEN_WIDTH * SCREEN_HEIGHT, topLeft, &written);
+    FillConsoleOutputCharacterW(hFront, L' ', g_config.SCREEN_WIDTH * g_config.SCREEN_HEIGHT, topLeft, &written);
 
-    // 使用宽字符串精确居中（计算中文字符宽度）
     const wchar_t* title = L"游戏结束！";
     int titleLen = wcslen(title);
     int titleCols = 0;
@@ -463,7 +466,7 @@ void ShowGameOver() {
     }
 
     wchar_t scoreBuf[32];
-    swprintf(scoreBuf, 32, L"得分：%lld", score);
+    swprintf(scoreBuf, 32, L"得分：%lld", g_state.score);
     int scoreLen = wcslen(scoreBuf);
     int scoreCols = 0;
     for (int i = 0; i < scoreLen; ++i) {
@@ -483,21 +486,17 @@ void ShowGameOver() {
             msgCols += 1;
     }
 
-    int centerY = SCREEN_HEIGHT / 2 - 1;
+    int centerY = g_config.SCREEN_HEIGHT / 2 - 1;
 
-    // 标题
-    SetConsoleCursorPosition(hFront, { (SHORT)((SCREEN_WIDTH - titleCols) / 2), (SHORT)centerY });
+    SetConsoleCursorPosition(hFront, { (SHORT)((g_config.SCREEN_WIDTH - titleCols) / 2), (SHORT)centerY });
     WriteConsoleW(hFront, title, titleLen, &written, NULL);
 
-    // 得分
-    SetConsoleCursorPosition(hFront, { (SHORT)((SCREEN_WIDTH - scoreCols) / 2), (SHORT)(centerY + 1) });
+    SetConsoleCursorPosition(hFront, { (SHORT)((g_config.SCREEN_WIDTH - scoreCols) / 2), (SHORT)(centerY + 1) });
     WriteConsoleW(hFront, scoreBuf, scoreLen, &written, NULL);
 
-    // 操作提示
-    SetConsoleCursorPosition(hFront, { (SHORT)((SCREEN_WIDTH - msgCols) / 2), (SHORT)(centerY + 2) });
+    SetConsoleCursorPosition(hFront, { (SHORT)((g_config.SCREEN_WIDTH - msgCols) / 2), (SHORT)(centerY + 2) });
     WriteConsoleW(hFront, restartMsg, msgLen, &written, NULL);
 
-    // 等待用户按键（前台检测）
     while (true) {
         if (!IsConsoleForeground()) {
             Sleep(50);
@@ -508,8 +507,8 @@ void ShowGameOver() {
             Draw();
             break;
         } else if (GetAsyncKeyState(VK_ESCAPE) & 0x8000) {
-            CloseHandle(hBuffer[0]);
-            CloseHandle(hBuffer[1]);
+            CloseHandle(g_state.hBuffer[0]);
+            CloseHandle(g_state.hBuffer[1]);
             timeEndPeriod(1);
             exit(0);
         }
@@ -521,9 +520,9 @@ void ShowGameOver() {
 // 主循环
 // ======================================================================
 int main() {
-    LoadConfig();                 // 加载配置（或使用默认值）
-    dinoY = GROUND_Y;             // 初始化恐龙位置
-    nextBoostTime = INITIAL_BOOST_TIME;
+    LoadConfig();
+    g_state.dinoY = g_config.GROUND_Y;
+    g_state.nextBoostTime = g_config.INITIAL_BOOST_TIME;
 
     srand((unsigned)time(nullptr));
     InitConsole();
@@ -537,41 +536,37 @@ int main() {
     while (true) {
         UpdateInput();
 
-        if (gameOver) {
+        if (g_state.gameOver) {
             ShowGameOver();
             continue;
         }
 
-        // 计算真实帧间隔
         LARGE_INTEGER now;
         QueryPerformanceCounter(&now);
-        double deltaTime = (double)(now.QuadPart - lastPhysicsTime.QuadPart) / (double)freq.QuadPart;
+        double deltaTime = (double)(now.QuadPart - lastPhysicsTime.QuadPart) / (double)g_state.freq.QuadPart;
         lastPhysicsTime = now;
-        if (deltaTime > 0.05) deltaTime = 0.05;   // 防止跳跃过大
+        if (deltaTime > 0.05) deltaTime = 0.05;
 
-        // 固定物理步长更新
         accumulator += deltaTime;
-        while (accumulator >= PHYSICS_DT) {
+        while (accumulator >= g_config.PHYSICS_DT) {
             Update();
-            accumulator -= PHYSICS_DT;
+            accumulator -= g_config.PHYSICS_DT;
         }
 
-        // 计分（基于墙上时间）
-        if (ENABLE_SCORING && !gameOver) {
-            double elapsedScore = (double)(now.QuadPart - lastScoreTime.QuadPart) / (double)freq.QuadPart;
-            if (elapsedScore >= SCORE_INTERVAL) {
-                score++;
-                lastScoreTime = now;
+        if (g_config.ENABLE_SCORING && !g_state.gameOver) {
+            double elapsedScore = (double)(now.QuadPart - g_state.lastScoreTime.QuadPart) / (double)g_state.freq.QuadPart;
+            if (elapsedScore >= g_config.SCORE_INTERVAL) {
+                g_state.score++;
+                g_state.lastScoreTime = now;
             }
         }
 
         Draw();
 
-        // 帧率控制（目标 TARGET_FPS）
         static LARGE_INTEGER lastDrawTime = {0};
         if (lastDrawTime.QuadPart != 0) {
-            double elapsedSinceDraw = (double)(now.QuadPart - lastDrawTime.QuadPart) / (double)freq.QuadPart;
-            double sleepTime = max(0.0, 1.0 / TARGET_FPS - elapsedSinceDraw);
+            double elapsedSinceDraw = (double)(now.QuadPart - lastDrawTime.QuadPart) / (double)g_state.freq.QuadPart;
+            double sleepTime = max(0.0, 1.0 / g_config.TARGET_FPS - elapsedSinceDraw);
             if (sleepTime > 0.001) {
                 Sleep((DWORD)(sleepTime * 1000));
             }
@@ -579,10 +574,9 @@ int main() {
         lastDrawTime = now;
     }
 
-    // 释放资源（实际上不会执行到，仅作完整性）
-    for (int i = 0; i < SCREEN_HEIGHT; ++i)
-        delete[] screen[i];
-    delete[] screen;
+    for (int i = 0; i < g_config.SCREEN_HEIGHT; ++i)
+        delete[] g_state.screen[i];
+    delete[] g_state.screen;
 
     timeEndPeriod(1);
     return 0;
