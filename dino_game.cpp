@@ -16,16 +16,16 @@ const int SCREEN_HEIGHT = 25;
 const int GROUND_Y = 10;
 const int DINO_X = 5;
 const int PLATFORM_WIDTH = 1;
-const double BASE_SPEED = 0.5;         // 基础速度
-const double MAX_SPEED = 1.5;          // 最大速度
-const double SPEED_PER_SCORE = 0.0001; // 每分增速
-const double GRAVITY = 0.05;           // 重力
-const double JUMP_VEL_MAX = -0.42;     // 最大起跳速度
+const double BASE_SPEED = 0.5;
+const double MAX_SPEED = 1.5;
+const double SPEED_PER_SCORE = 0.0004;
+const double GRAVITY = 0.05;
+const double JUMP_VEL_MAX = -0.42;
 const int MIN_GAP = 8;
 const int MAX_GAP = 40;
 const double COLLISION_DIST_THRESHOLD = 1.0;
-const double PHYSICS_DT = 1.0 / 60.0;  // 物理步长 (60Hz)
-const double TARGET_FPS = 120.0;       // 目标帧率
+const double PHYSICS_DT = 1.0 / 60.0;
+const double TARGET_FPS = 120.0;
 const double FRAME_TIME = 1.0 / TARGET_FPS;
 
 // ===== 游戏状态 =====
@@ -45,6 +45,11 @@ char screen[SCREEN_HEIGHT][SCREEN_WIDTH];
 
 LARGE_INTEGER freq, lastTime;
 double deltaTime = 0.0;
+double currentTime = 0.0;          // 游戏运行总时间（秒）
+double nextClearTime = 20.0;       // 下次速度倍增时间点
+bool safeZoneActive = false;       // 是否处于预清空状态
+
+double speedMultiplier = 1.0;
 
 // ===== 控制台初始化 =====
 void InitConsole() {
@@ -112,7 +117,6 @@ void Draw() {
         }
     }
 
-    // 分数（右上角右对齐）
     char scoreStr[32];
     snprintf(scoreStr, sizeof(scoreStr), "Score: %lld", score);
     int len = strlen(scoreStr);
@@ -121,10 +125,10 @@ void Draw() {
     for (int i = 0; scoreStr[i] && (startX + i) < SCREEN_WIDTH; ++i)
         screen[0][startX + i] = scoreStr[i];
 
-    // 速度系数显示（已注释，启用时显示 currentSpeed / BASE_SPEED，初始1.00）
+    // 速度系数显示已注释，启用时显示 (BASE_SPEED + score*SPEED_PER_SCORE)*speedMultiplier / BASE_SPEED
     /*
     char speedStr[16];
-    double currentSpeed = BASE_SPEED + score * SPEED_PER_SCORE;
+    double currentSpeed = (BASE_SPEED + score * SPEED_PER_SCORE) * speedMultiplier;
     if (currentSpeed > MAX_SPEED) currentSpeed = MAX_SPEED;
     double displaySpeed = currentSpeed / BASE_SPEED;
     snprintf(speedStr, sizeof(speedStr), "Spd:%.2f", displaySpeed);
@@ -145,7 +149,7 @@ void Draw() {
 }
 
 void PhysicsUpdate() {
-    double currentSpeed = BASE_SPEED + score * SPEED_PER_SCORE;
+    double currentSpeed = (BASE_SPEED + score * SPEED_PER_SCORE) * speedMultiplier;
     if (currentSpeed > MAX_SPEED) currentSpeed = MAX_SPEED;
 
     if (isJumping) {
@@ -183,16 +187,25 @@ void PhysicsUpdate() {
     while (!platforms.empty() && platforms.front() + PLATFORM_WIDTH < 0)
         platforms.erase(platforms.begin());
 
+    // 障碍物生成（受safeZoneActive影响）
     if (platforms.empty()) {
-        platforms.push_back(SCREEN_WIDTH - PLATFORM_WIDTH);
+        double startX = SCREEN_WIDTH - PLATFORM_WIDTH;
+        if (safeZoneActive && startX < DINO_X + 20.0)
+            startX = DINO_X + 20.0;
+        platforms.push_back(startX);
     } else {
         double lastX = platforms.back();
         if (lastX + PLATFORM_WIDTH < SCREEN_WIDTH - 10) {
             int gap = MIN_GAP + rand() % (MAX_GAP - MIN_GAP + 1);
-            platforms.push_back(lastX + PLATFORM_WIDTH + gap);
+            double newX = lastX + PLATFORM_WIDTH + gap;
+            if (safeZoneActive && newX < DINO_X + 20.0) {
+                newX = DINO_X + 20.0;
+            }
+            platforms.push_back(newX);
         }
     }
 
+    // 碰撞检测
     double dinoLeft = DINO_X;
     double dinoRight = DINO_X + 1.0;
     double dinoTop = dinoY - 1.0;
@@ -245,6 +258,10 @@ void ResetGame() {
     spacePressed = false;
     platforms.clear();
     platforms.push_back(SCREEN_WIDTH - PLATFORM_WIDTH + rand() % 20);
+    speedMultiplier = 1.0;
+    currentTime = 0.0;
+    nextClearTime = 20.0;
+    safeZoneActive = false;
 }
 
 void ShowGameOver() {
@@ -304,13 +321,35 @@ int main() {
         lastTime = current;
         if (deltaTime > 0.05) deltaTime = 0.05;
 
-        accumulator += deltaTime;
+        // 累加游戏时间
+        currentTime += deltaTime;
 
+        // 在触发前3秒激活安全区
+        if (currentTime >= nextClearTime - 3.0 && !safeZoneActive) {
+            safeZoneActive = true;
+        }
+
+        // 到达触发时间
+        if (currentTime >= nextClearTime) {
+            nextClearTime += 20.0;
+            safeZoneActive = false; // 重置，下次再提前激活
+
+            // 速度倍增
+            speedMultiplier *= 1.2;
+            double base = BASE_SPEED + score * SPEED_PER_SCORE;
+            if (speedMultiplier * base > MAX_SPEED) {
+                speedMultiplier = MAX_SPEED / base;
+            }
+        }
+
+        // 固定物理步长更新
+        accumulator += deltaTime;
         while (accumulator >= PHYSICS_DT) {
             PhysicsUpdate();
             accumulator -= PHYSICS_DT;
         }
 
+        // 计分
         clock_t now = clock();
         double elapsed = (double)(now - lastScoreTime) / CLOCKS_PER_SEC;
         if (elapsed >= SCORE_INTERVAL) {
@@ -320,6 +359,7 @@ int main() {
 
         Draw();
 
+        // 帧率控制
         static LARGE_INTEGER lastDrawTime = {0};
         if (lastDrawTime.QuadPart != 0) {
             double elapsedSinceDraw = (double)(current.QuadPart - lastDrawTime.QuadPart) / (double)freq.QuadPart;
