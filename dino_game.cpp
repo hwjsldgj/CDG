@@ -19,7 +19,7 @@ const double GRAVITY = 0.2;
 
 const double JUMP_VEL_MIN = -0.775;
 const double JUMP_VEL_MAX = -1.7;
-const double MAX_HOLD_TIME = 0.5;     // 加速窗口时间（秒），此后忽略空格
+const double MAX_HOLD_TIME = 0.2;     // 加速窗口时间
 
 const int MIN_GAP = 8;
 const int MAX_GAP = 40;
@@ -120,13 +120,15 @@ void Update(double deltaTime) {
     if (isJumping) {
         dinoVy += GRAVITY;
 
-        // 记录上升时间
+        // 记录上升时间，限制不超过窗口
         if (dinoVy < 0) {
             riseTime += deltaTime;
+            if (riseTime > MAX_HOLD_TIME)
+                riseTime = MAX_HOLD_TIME;
         }
 
-        // 按住空格加速（仅上升阶段、未达最大速度、且上升时间小于0.5秒）
-        if (spacePressed && dinoVy < 0 && !maxReached && riseTime < MAX_HOLD_TIME) {
+        // 加速条件：按住空格、上升中、上升时间小于窗口、且未达最大速度
+        if (spacePressed && dinoVy < 0 && riseTime < MAX_HOLD_TIME && !maxReached) {
             holdTime += deltaTime;
             if (holdTime > MAX_HOLD_TIME)
                 holdTime = MAX_HOLD_TIME;
@@ -205,7 +207,6 @@ void Update(double deltaTime) {
 void UpdateInput() {
     bool isSpaceDown = (GetAsyncKeyState(VK_SPACE) & 0x8000) != 0;
 
-    // 仅当在地面且未起跳时才处理起跳（并且忽略起跳后0.5秒内的额外空格）
     if (!isJumping && dinoY >= GROUND_Y) {
         if (isSpaceDown && !spacePressed) {
             dinoVy = JUMP_VEL_MIN;
@@ -216,7 +217,6 @@ void UpdateInput() {
         }
     }
 
-    // 更新空格按下状态（用于加速判断）
     spacePressed = isSpaceDown;
 
     if (GetAsyncKeyState(VK_ESCAPE) & 0x8000)
