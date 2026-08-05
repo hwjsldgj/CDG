@@ -9,7 +9,7 @@
 
 using namespace std;
 
-// ===== 常量（只缩放速度，恢复重力） =====
+// ===== 常量 =====
 const int SCREEN_WIDTH = 80;
 const int SCREEN_HEIGHT = 25;
 const int GROUND_Y = 10;
@@ -17,9 +17,8 @@ const int DINO_X = 5;
 const int PLATFORM_WIDTH = 1;
 const int PLATFORM_SPEED = 1;
 const double GRAVITY = 0.15;
-const double JUMP_VEL_MIN = -0.5425;
-const double JUMP_VEL_MAX = -0.77;
-const double MAX_HOLD_TIME = 0.2;
+const double JUMP_VEL_MAX = -0.77;       // 最大上升速度（负值）
+const double MAX_HOLD_TIME = 0.2;        // 不再使用，保留
 const int MIN_GAP = 8;
 const int MAX_GAP = 40;
 const double COLLISION_DIST_THRESHOLD = 1.0;
@@ -31,7 +30,6 @@ long long score = 0;
 double dinoY = GROUND_Y;
 double dinoVy = 0.0;
 bool isJumping = false;
-double riseTime = 0.0;
 
 bool spacePressed = false;
 
@@ -125,33 +123,37 @@ void Draw() {
 // ===== 更新（每帧） =====
 void Update() {
     if (isJumping) {
-        dinoVy += GRAVITY;
-
+        // 上升阶段（速度向上）
         if (dinoVy < 0) {
-            if (spacePressed && riseTime < MAX_HOLD_TIME) {
-                riseTime += 1.0 / 60.0;
-                if (riseTime > MAX_HOLD_TIME) riseTime = MAX_HOLD_TIME;
-                double ratio = riseTime / MAX_HOLD_TIME;
-                double targetVel = JUMP_VEL_MIN + (JUMP_VEL_MAX - JUMP_VEL_MIN) * ratio;
-                if (dinoVy > targetVel) dinoVy = targetVel;
+            if (spacePressed) {
+                // 按住空格，保持最大上升速度（抵消重力）
+                dinoVy = JUMP_VEL_MAX;
+            } else {
+                // 松开空格，重力开始减速
+                dinoVy += GRAVITY;
             }
-            if (!spacePressed) {
-                riseTime = 0.0;
-            }
+        } else {
+            // 下降阶段，重力加速
+            dinoVy += GRAVITY;
         }
 
         dinoY += dinoVy;
 
+        // 限制最高点（防止穿顶）
+        if (dinoY < 2.0) {
+            dinoY = 2.0;
+            dinoVy = 0.0; // 转为下降
+        }
+
+        // 落地检测
         if (dinoY >= GROUND_Y) {
             dinoY = GROUND_Y;
             dinoVy = 0.0;
             isJumping = false;
-            riseTime = 0.0;
         }
-    } else {
-        riseTime = 0.0;
     }
 
+    // 障碍物移动
     for (int& x : platforms)
         x -= PLATFORM_SPEED;
 
@@ -168,6 +170,7 @@ void Update() {
         }
     }
 
+    // 碰撞检测（AABB）
     double dinoLeft = DINO_X;
     double dinoRight = DINO_X + 1.0;
     double dinoTop = dinoY - 1.0;
@@ -200,9 +203,9 @@ void UpdateInput() {
 
     if (!isJumping && dinoY >= GROUND_Y) {
         if (isSpaceDown && !spacePressed) {
-            dinoVy = JUMP_VEL_MIN;
+            // 起跳，给予最大向上速度
+            dinoVy = JUMP_VEL_MAX;
             isJumping = true;
-            riseTime = 0.0;
         }
     }
 
@@ -223,7 +226,6 @@ void ResetGame() {
     dinoVy = 0.0;
     isJumping = false;
     spacePressed = false;
-    riseTime = 0.0;
     platforms.clear();
     platforms.push_back(SCREEN_WIDTH - PLATFORM_WIDTH + rand() % 20);
 }
