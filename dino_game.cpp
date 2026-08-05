@@ -9,33 +9,29 @@
 
 using namespace std;
 
-// ===== 常量 =====
+// ===== 常量配置 =====
 const int SCREEN_WIDTH = 80;
 const int SCREEN_HEIGHT = 25;
 const int GROUND_Y = 10;
 const int DINO_X = 5;
 const int PLATFORM_WIDTH = 1;
-const int PLATFORM_SPEED = 1;
-const double GRAVITY = 0.2;
-const double MIN_SPEED = -0.775;     // 最小速度（charge=0）
-const double MAX_SPEED = -1.7;       // 最大速度（charge=0.2）
-const double CHARGE_RATE = 0.008;    // 每帧蓄力增加量
-const double DECAY_RATE = 0.005;     // 每帧衰减量
+const double BASE_SPEED = 1.0;       // 基础障碍物移动速度（像素/秒）
+const double GRAVITY = 0.2;          // 重力（像素/帧²），但会乘以dt
+const double JUMP_VEL_MIN = -0.775;
+const double JUMP_VEL_MAX = -1.7;
+const double MAX_HOLD_TIME = 0.2;    // 蓄力窗口（秒）
 const int MIN_GAP = 8;
 const int MAX_GAP = 40;
 const double COLLISION_DIST_THRESHOLD = 1.0;
 
 // ===== 游戏状态 =====
 bool gameOver = false;
-int score = 0;
+long long score = 0;
 
 double dinoY = GROUND_Y;
 double dinoVy = 0.0;
 bool isJumping = false;
-
-// 蓄力相关
-double charge = 0.0;          // 当前蓄力值（0~0.2）
-bool isCharging = false;      // 是否处于蓄力增加阶段（按住空格且charge==0开始）
+double riseTime = 0.0;               // 蓄力累计时间（秒）
 
 bool spacePressed = false;
 
@@ -44,6 +40,13 @@ vector<int> platforms;
 HANDLE hBuffer[2];
 int currentFront = 0;
 char screen[SCREEN_HEIGHT][SCREEN_WIDTH];
+
+// 高精度计时
+LARGE_INTEGER freq, lastTime;
+double deltaTime = 0.0;
+
+// 速度因子（随分数增加）
+double speedMultiplier = 1.0;
 
 // ===== 控制台初始化 =====
 void InitConsole() {
@@ -74,6 +77,16 @@ void InitConsole() {
 
     SetConsoleActiveScreenBuffer(hBuffer[0]);
     currentFront = 0;
+
+    // 高精度计时初始化
+    QueryPerformanceFrequency(&freq);
+    QueryPerformanceCounter(&lastTime);
+}
+
+// ===== 窗口前台检测 =====
+bool IsConsoleForeground() {
+    HWND hwnd = GetConsoleWindow();
+    return (GetForegroundWindow() == hwnd);
 }
 
 // ===== 绘制 =====
@@ -104,15 +117,15 @@ void Draw() {
     }
 
     char scoreStr[32];
-    snprintf(scoreStr, sizeof(scoreStr), "Score: %d", score / 10);
+    snprintf(scoreStr, sizeof(scoreStr), "Score: %lld", score / 10);
     for (int i = 0; scoreStr[i] && i < SCREEN_WIDTH; ++i)
         screen[0][i] = scoreStr[i];
 
-    // 显示蓄力值（调试用，可删除）
-    char chargeStr[16];
-    snprintf(chargeStr, sizeof(chargeStr), "C:%.2f", charge);
-    for (int i = 0; chargeStr[i] && i < SCREEN_WIDTH; ++i)
-        screen[1][i] = chargeStr[i];
+    // 调试：显示蓄力时间
+    char debugStr[16];
+    snprintf(debugStr, sizeof(debugStr), "T:%.2f", riseTime);
+    for (int i = 0; debugStr[i] && i < SCREEN_WIDTH; ++i)
+        screen[1][i] = debugStr[i];
 
     DWORD bytesWritten;
     COORD writeCoord = { 0, 0 };
@@ -126,72 +139,66 @@ void Draw() {
     currentFront = back;
 }
 
-// ===== 更新蓄力 =====
-void UpdateCharge() {
-    // 蓄力增加条件：按住空格且 charge==0（开始蓄力），且处于可蓄力状态（未锁定）
-    if (spacePressed && charge == 0.0 && !isJumping) {
-        isCharging = true;
-    }
-
-    // 如果处于蓄力增加阶段
-    if (isCharging) {
-        if (spacePressed) {
-            charge += CHARGE_RATE;
-            if (charge > 0.2) charge = 0.2;
-        } else {
-            // 松开空格，进入衰减阶段
-            isCharging = false;
-        }
-    }
-
-    // 衰减阶段（不管是否按住，只要 charge>0 且不在蓄力增加状态）
-    if (!isCharging && charge > 0.0) {
-        charge -= DECAY_RATE;
-        if (charge < 0.0) {
-            charge = 0.0;
-            // 完全衰减后，允许重新蓄力（isCharging 可重新开启）
-        }
-    }
-
-    // 重要：如果 charge>0 且正在衰减（isCharging==false），即使按住空格也不影响，直到 charge 降到0。
-}
-
-// ===== 更新（每帧） =====
+// ===== 物理更新 =====
 void Update() {
-    // 更新蓄力状态
-    UpdateCharge();
+    // 更新速度因子（每100分增加0.1）
+    speedMultiplier = 1.0 + (score / 1000) * 0.1;
 
-    // 物理更新
     if (isJumping) {
-        dinoVy += GRAVITY;
-        dinoY += dinoVy;
+        dinoVy += GRAVITY * deltaTime * 60;  // 乘以60保持原手感
 
-        if (dinoY >= GROUND_Y) {
+        // 上升阶段蓄力逻辑
+        if (dinoVy < 0) {
+            // 如果按住空格且未超时，累计时间
+            if (spacePressed && riseTime < MAX_HOLD_TIME) {
+                riseTime += deltaTime;
+                if (riseTime > MAX_HOLD_TIME) riseTime = MAX_HOLD_TIME;
+                double ratio = riseTime / MAX_HOLD_TIME;
+                double targetVel = JUMP_VEL_MIN + (JUMP_VEL_MAX - JUMP_VEL_MIN) * ratio;
+                if (dinoVy > targetVel) dinoVy = targetVel;
+            }
+            // 如果松开了空格，立即重置蓄力时间（防止二次蓄力）
+            if (!spacePressed) {
+                riseTime = 0.0;
+            }
+        }
+
+        dinoY += dinoVy * deltaTime * 60;
+
+        // 落地处理（增加容错）
+        if (dinoY >= GROUND_Y - 0.01) {
             dinoY = GROUND_Y;
             dinoVy = 0.0;
             isJumping = false;
-            // 落地后重置蓄力？或者保留？我们保留 charge 继续衰减
+            riseTime = 0.0;
         }
+    } else {
+        // 地面时蓄力归零（防止落地残留）
+        riseTime = 0.0;
     }
 
-    // 障碍物移动
+    // 障碍物移动（基于速度因子和deltaTime）
+    double speed = BASE_SPEED * speedMultiplier;
     for (int& x : platforms)
-        x -= PLATFORM_SPEED;
+        x -= (int)(speed * deltaTime * 60);
 
+    // 移除移出左侧的障碍物（用双指针优化，但vector容量小直接erase）
     while (!platforms.empty() && platforms.front() + PLATFORM_WIDTH < 0)
         platforms.erase(platforms.begin());
 
+    // 生成新障碍物（间距随速度增加而增大，但总间距范围不变）
     if (platforms.empty()) {
         platforms.push_back(SCREEN_WIDTH - PLATFORM_WIDTH);
     } else {
         int lastX = platforms.back();
         if (lastX + PLATFORM_WIDTH < SCREEN_WIDTH - 10) {
-            int gap = MIN_GAP + rand() % (MAX_GAP - MIN_GAP + 1);
+            // 间距随速度增加略微增大，但保持在范围内
+            int gap = (int)(MIN_GAP + (MAX_GAP - MIN_GAP) * (rand() / (RAND_MAX + 1.0)));
             platforms.push_back(lastX + PLATFORM_WIDTH + gap);
         }
     }
 
-    // 碰撞检测
+    // 碰撞检测（标准AABB）
     double dinoLeft = DINO_X;
     double dinoRight = DINO_X + 1.0;
     double dinoTop = dinoY - 1.0;
@@ -203,16 +210,9 @@ void Update() {
         double platTop = GROUND_Y - 1.0;
         double platBottom = GROUND_Y;
 
-        if (!(dinoTop < platBottom && dinoBottom > platTop))
-            continue;
-
-        double horizDist = 0.0;
-        if (platRight <= dinoLeft)
-            horizDist = dinoLeft - platRight;
-        else if (platLeft >= dinoRight)
-            horizDist = platLeft - dinoRight;
-
-        if (horizDist < COLLISION_DIST_THRESHOLD) {
+        // AABB重叠判定
+        if (dinoLeft < platRight && dinoRight > platLeft &&
+            dinoTop < platBottom && dinoBottom > platTop) {
             gameOver = true;
             break;
         }
@@ -221,25 +221,32 @@ void Update() {
     ++score;
 }
 
-// ===== 输入 =====
+// ===== 输入处理 =====
 void UpdateInput() {
+    // 仅当控制台窗口在前台才响应
+    if (!IsConsoleForeground()) {
+        spacePressed = false;
+        return;
+    }
+
     bool isSpaceDown = (GetAsyncKeyState(VK_SPACE) & 0x8000) != 0;
 
-    // 起跳：在地面且按下空格（瞬间）
-    if (!isJumping && dinoY >= GROUND_Y) {
+    if (!isJumping && dinoY >= GROUND_Y - 0.01) {
         if (isSpaceDown && !spacePressed) {
-            // 根据当前 charge 计算初速度
-            double speedFactor = MIN_SPEED + (MAX_SPEED - MIN_SPEED) * (charge / 0.2); // charge 0~0.2
-            dinoVy = speedFactor;
+            dinoVy = JUMP_VEL_MIN;
             isJumping = true;
-            // 起跳后，蓄力状态不受影响，继续
+            riseTime = 0.0;         // 起跳重置蓄力时间
         }
     }
 
     spacePressed = isSpaceDown;
 
-    if (GetAsyncKeyState(VK_ESCAPE) & 0x8000)
+    if (GetAsyncKeyState(VK_ESCAPE) & 0x8000) {
+        // 退出前释放句柄
+        CloseHandle(hBuffer[0]);
+        CloseHandle(hBuffer[1]);
         exit(0);
+    }
 }
 
 // ===== 重置 =====
@@ -249,14 +256,14 @@ void ResetGame() {
     dinoY = GROUND_Y;
     dinoVy = 0.0;
     isJumping = false;
-    charge = 0.0;
-    isCharging = false;
     spacePressed = false;
+    riseTime = 0.0;
+    speedMultiplier = 1.0;
     platforms.clear();
     platforms.push_back(SCREEN_WIDTH - PLATFORM_WIDTH + rand() % 20);
 }
 
-// ===== Game Over =====
+// ===== Game Over 界面 =====
 void ShowGameOver() {
     HANDLE hFront = hBuffer[currentFront];
     DWORD written;
@@ -266,21 +273,25 @@ void ShowGameOver() {
     WriteConsoleA(hFront, "GAME OVER!", 10, &written, NULL);
     SetConsoleCursorPosition(hFront, { SCREEN_WIDTH / 2 - 8, SCREEN_HEIGHT / 2 + 1 });
     char buf[32];
-    snprintf(buf, sizeof(buf), "Score: %d", score / 10);
+    snprintf(buf, sizeof(buf), "Score: %lld", score / 10);
     WriteConsoleA(hFront, buf, strlen(buf), &written, NULL);
     SetConsoleCursorPosition(hFront, { SCREEN_WIDTH / 2 - 10, SCREEN_HEIGHT / 2 + 2 });
     WriteConsoleA(hFront, "Press 'r' to restart, ESC to exit", 34, &written, NULL);
 
+    // GameOver输入也使用GetAsyncKeyState，并检查前台
     while (true) {
-        if (_kbhit()) {
-            char ch = _getch();
-            if (ch == 'r') {
-                ResetGame();
-                Draw();
-                break;
-            } else if (ch == 27) {
-                exit(0);
-            }
+        if (!IsConsoleForeground()) {
+            Sleep(50);
+            continue;
+        }
+        if (GetAsyncKeyState('R') & 0x8000) {
+            ResetGame();
+            Draw();
+            break;
+        } else if (GetAsyncKeyState(VK_ESCAPE) & 0x8000) {
+            CloseHandle(hBuffer[0]);
+            CloseHandle(hBuffer[1]);
+            exit(0);
         }
         Sleep(50);
     }
@@ -294,6 +305,13 @@ int main() {
     Draw();
 
     while (true) {
+        // 计算真实帧间隔
+        LARGE_INTEGER current;
+        QueryPerformanceCounter(&current);
+        deltaTime = (double)(current.QuadPart - lastTime.QuadPart) / (double)freq.QuadPart;
+        lastTime = current;
+        if (deltaTime > 0.05) deltaTime = 0.05; // 防止跳跃
+
         UpdateInput();
 
         if (gameOver) {
@@ -304,7 +322,7 @@ int main() {
         Update();
         Draw();
 
-        Sleep(16); // ~60 FPS
+        Sleep(1); // 让出CPU，实际帧率由计时器控制
     }
 
     return 0;
