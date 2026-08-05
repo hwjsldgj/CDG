@@ -12,13 +12,17 @@
 
 using namespace std;
 
-/**
- * ======================================================================
- * 游戏配置（内置默认值，可由 config.ini 覆盖）
- * 所有变量均为全局，便于各函数访问
- * 默认值已在声明处硬编码，如需修改需重新编译
- * ======================================================================
- */
+// ======================================================================
+// 全局配置变量（内置默认值，可由 config.ini 覆盖）
+// ======================================================================
+
+// ---------- 功能开关 ----------
+bool ENABLE_BOOST = true;               // 启用速度倍增
+bool ENABLE_LINEAR_SPEED = true;        // 启用线性速度增长
+bool ENABLE_HOLD_JUMP = true;           // 启用长按跳跃加速
+bool ENABLE_OBSTACLES = true;           // 启用障碍物生成
+bool ENABLE_COLLISION = true;           // 启用碰撞检测
+bool ENABLE_SCORING = true;             // 启用计分
 
 // ---------- 屏幕与布局 ----------
 int SCREEN_WIDTH = 80;      // 窗口宽度（列）
@@ -78,7 +82,13 @@ void LoadConfig(const char* filename = "config.ini") {
         val.erase(val.find_last_not_of(" \t") + 1);
 
         // 逐一匹配并覆盖全局变量
-        if (key == "SCREEN_WIDTH") SCREEN_WIDTH = stoi(val);
+        if (key == "ENABLE_BOOST") ENABLE_BOOST = (stoi(val) != 0);
+        else if (key == "ENABLE_LINEAR_SPEED") ENABLE_LINEAR_SPEED = (stoi(val) != 0);
+        else if (key == "ENABLE_HOLD_JUMP") ENABLE_HOLD_JUMP = (stoi(val) != 0);
+        else if (key == "ENABLE_OBSTACLES") ENABLE_OBSTACLES = (stoi(val) != 0);
+        else if (key == "ENABLE_COLLISION") ENABLE_COLLISION = (stoi(val) != 0);
+        else if (key == "ENABLE_SCORING") ENABLE_SCORING = (stoi(val) != 0);
+        else if (key == "SCREEN_WIDTH") SCREEN_WIDTH = stoi(val);
         else if (key == "SCREEN_HEIGHT") SCREEN_HEIGHT = stoi(val);
         else if (key == "GROUND_Y") GROUND_Y = stoi(val);
         else if (key == "DINO_X") DINO_X = stoi(val);
@@ -235,13 +245,15 @@ void Draw() {
     if (dinoRow >= 0 && dinoRow < SCREEN_HEIGHT)
         screen[dinoRow][DINO_X] = 'D';
 
-    // 绘制障碍物（两格高）
-    for (double px : platforms) {
-        int col = (int)(px + 0.5);
-        if (col >= 0 && col < SCREEN_WIDTH) {
-            screen[GROUND_Y][col] = '#';
-            if (GROUND_Y - 1 >= 0)
-                screen[GROUND_Y - 1][col] = '#';
+    // 绘制障碍物（受开关控制）
+    if (ENABLE_OBSTACLES) {
+        for (double px : platforms) {
+            int col = (int)(px + 0.5);
+            if (col >= 0 && col < SCREEN_WIDTH) {
+                screen[GROUND_Y][col] = '#';
+                if (GROUND_Y - 1 >= 0)
+                    screen[GROUND_Y - 1][col] = '#';
+            }
         }
     }
 
@@ -270,8 +282,12 @@ void Draw() {
 // 物理更新（每帧调用，固定步长 60Hz）
 // ======================================================================
 void Update() {
-    // 计算当前速度（含线性增长和倍增）
-    double currentSpeed = (BASE_SPEED + score * SPEED_PER_SCORE) * speedMultiplier;
+    // 计算速度（线性增长 + 倍增）
+    double currentSpeed = BASE_SPEED;
+    if (ENABLE_LINEAR_SPEED) {
+        currentSpeed += score * SPEED_PER_SCORE;
+    }
+    currentSpeed *= speedMultiplier;
     if (currentSpeed > MAX_SPEED) currentSpeed = MAX_SPEED;
 
     // ---------- 速度倍增逻辑 ----------
@@ -285,12 +301,13 @@ void Update() {
     }
     lastTime = now;
 
-    if (currentTime >= nextBoostTime) {
+    if (ENABLE_BOOST && currentTime >= nextBoostTime) {
         speedMultiplier *= BOOST_FACTOR;
         // 防止超过最大速度
-        double tempSpeed = (BASE_SPEED + score * SPEED_PER_SCORE) * speedMultiplier;
+        double tempSpeed = (BASE_SPEED + (ENABLE_LINEAR_SPEED ? score * SPEED_PER_SCORE : 0)) * speedMultiplier;
         if (tempSpeed > MAX_SPEED) {
-            speedMultiplier = MAX_SPEED / (BASE_SPEED + score * SPEED_PER_SCORE);
+            speedMultiplier = MAX_SPEED / (BASE_SPEED + (ENABLE_LINEAR_SPEED ? score * SPEED_PER_SCORE : 0));
+            if (speedMultiplier < 1.0) speedMultiplier = 1.0; // 防止小于1
         }
         nextBoostTime += BOOST_INTERVAL;
     }
@@ -299,7 +316,7 @@ void Update() {
     if (isJumping) {
         // 上升段：长按保持最大速度，否则受重力
         if (dinoVy < 0) {
-            if (spacePressed) {
+            if (ENABLE_HOLD_JUMP && spacePressed) {
                 if (dinoY < JUMP_TOP_CLAMP) {
                     dinoVy += GRAVITY;   // 接近顶部减速
                 } else {
@@ -329,42 +346,46 @@ void Update() {
     }
 
     // ---------- 障碍物移动 ----------
-    for (double& x : platforms)
-        x -= currentSpeed;
+    if (ENABLE_OBSTACLES) {
+        for (double& x : platforms)
+            x -= currentSpeed;
 
-    // 移除移出屏幕左侧的障碍物
-    while (!platforms.empty() && platforms.front() + PLATFORM_WIDTH < 0) {
-        platforms.pop_front();
-    }
+        // 移除移出屏幕左侧的障碍物
+        while (!platforms.empty() && platforms.front() + PLATFORM_WIDTH < 0) {
+            platforms.pop_front();
+        }
 
-    // ---------- 障碍物生成 ----------
-    if (platforms.empty()) {
-        platforms.push_back(SCREEN_WIDTH - PLATFORM_WIDTH);
-    } else {
-        double lastX = platforms.back();
-        // 当最后一个障碍物离右端足够远时生成新障碍
-        if (lastX + PLATFORM_WIDTH < SCREEN_WIDTH - GENERATE_THRESHOLD) {
-            int gap = MIN_GAP + rand() % (MAX_GAP - MIN_GAP + 1);
-            platforms.push_back(lastX + PLATFORM_WIDTH + gap);
+        // ---------- 障碍物生成 ----------
+        if (platforms.empty()) {
+            platforms.push_back(SCREEN_WIDTH - PLATFORM_WIDTH);
+        } else {
+            double lastX = platforms.back();
+            // 当最后一个障碍物离右端足够远时生成新障碍
+            if (lastX + PLATFORM_WIDTH < SCREEN_WIDTH - GENERATE_THRESHOLD) {
+                int gap = MIN_GAP + rand() % (MAX_GAP - MIN_GAP + 1);
+                platforms.push_back(lastX + PLATFORM_WIDTH + gap);
+            }
         }
     }
 
     // ---------- 碰撞检测（AABB） ----------
-    double dinoLeft = DINO_X;
-    double dinoRight = DINO_X + 1.0;
-    double dinoTop = dinoY - 1.0;
-    double dinoBottom = dinoY;
+    if (ENABLE_COLLISION && ENABLE_OBSTACLES) {
+        double dinoLeft = DINO_X;
+        double dinoRight = DINO_X + 1.0;
+        double dinoTop = dinoY - 1.0;
+        double dinoBottom = dinoY;
 
-    for (double px : platforms) {
-        double platLeft = px;
-        double platRight = px + PLATFORM_WIDTH;
-        double platTop = GROUND_Y - 1.0;
-        double platBottom = GROUND_Y;
+        for (double px : platforms) {
+            double platLeft = px;
+            double platRight = px + PLATFORM_WIDTH;
+            double platTop = GROUND_Y - 1.0;
+            double platBottom = GROUND_Y;
 
-        if (dinoLeft < platRight && dinoRight > platLeft &&
-            dinoTop < platBottom && dinoBottom > platTop) {
-            gameOver = true;
-            break;
+            if (dinoLeft < platRight && dinoRight > platLeft &&
+                dinoTop < platBottom && dinoBottom > platTop) {
+                gameOver = true;
+                break;
+            }
         }
     }
 }
@@ -536,10 +557,12 @@ int main() {
         }
 
         // 计分（基于墙上时间）
-        double elapsedScore = (double)(now.QuadPart - lastScoreTime.QuadPart) / (double)freq.QuadPart;
-        if (elapsedScore >= SCORE_INTERVAL) {
-            if (!gameOver) score++;
-            lastScoreTime = now;
+        if (ENABLE_SCORING && !gameOver) {
+            double elapsedScore = (double)(now.QuadPart - lastScoreTime.QuadPart) / (double)freq.QuadPart;
+            if (elapsedScore >= SCORE_INTERVAL) {
+                score++;
+                lastScoreTime = now;
+            }
         }
 
         Draw();
