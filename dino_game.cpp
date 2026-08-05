@@ -4,45 +4,43 @@
 #include <vector>
 #include <cstdlib>
 #include <ctime>
+#include <cstring>
 
 using namespace std;
 
-// 控制台尺寸（固定 80x25）
+// 控制台尺寸（80x25）
 const int SCREEN_WIDTH = 80;
 const int SCREEN_HEIGHT = 25;
-const int GROUND_Y = 20;            // 地面所在行（0-based）
-const int DINO_X = 5;               // 人物固定列
-const int PLATFORM_WIDTH = 5;       // 平台宽度（字符数）
-const int PLATFORM_GAP = 15;        // 平台间距
-const int PLATFORM_SPEED = 1;       // 每帧左移像素
+const int GROUND_Y = 20;            // 地面所在行
+const int DINO_X = 5;               // 恐龙固定列
+const int PLATFORM_WIDTH = 5;
+const int PLATFORM_GAP = 15;
+const int PLATFORM_SPEED = 1;
 const double GRAVITY = 0.6;
 const double JUMP_SPEED = -7.0;
 
-// 游戏状态
 bool gameOver = false;
 int score = 0;
 
-// 人物
 double dinoY = GROUND_Y;
 double dinoVy = 0.0;
 bool isJumping = false;
 
-// 平台列表
 vector<int> platforms;
 
-// 双缓冲区句柄
+// 双缓冲句柄
 HANDLE hBuffer[2];
-int currentFront = 0;   // 当前显示缓冲区索引
+int currentFront = 0;
 
-// 屏幕字符矩阵（用于内存绘制）
+// 屏幕字符矩阵
 char screen[SCREEN_HEIGHT][SCREEN_WIDTH];
 
-// 设置控制台窗口并初始化双缓冲
+// ---------- 控制台初始化 ----------
 void InitConsole() {
-    // 设置窗口大小
+    // 设置窗口大小（80列，25行）
     system("mode con cols=80 lines=25");
 
-    // 禁用快速编辑模式，避免阻塞输入
+    // 禁用快速编辑模式，避免阻塞
     HANDLE hStdin = GetStdHandle(STD_INPUT_HANDLE);
     DWORD mode;
     GetConsoleMode(hStdin, &mode);
@@ -53,7 +51,17 @@ void InitConsole() {
     hBuffer[0] = CreateConsoleScreenBuffer(GENERIC_READ | GENERIC_WRITE, 0, NULL, CONSOLE_TEXTMODE_BUFFER, NULL);
     hBuffer[1] = CreateConsoleScreenBuffer(GENERIC_READ | GENERIC_WRITE, 0, NULL, CONSOLE_TEXTMODE_BUFFER, NULL);
 
-    // 隐藏光标（两个缓冲区都隐藏）
+    // 设置缓冲区大小与窗口一致
+    COORD bufferSize = { SCREEN_WIDTH, SCREEN_HEIGHT };
+    SetConsoleScreenBufferSize(hBuffer[0], bufferSize);
+    SetConsoleScreenBufferSize(hBuffer[1], bufferSize);
+
+    // 设置窗口显示区域（左上角(0,0)到右下角(宽度-1,高度-1)）
+    SMALL_RECT windowRect = { 0, 0, SCREEN_WIDTH - 1, SCREEN_HEIGHT - 1 };
+    SetConsoleWindowInfo(hBuffer[0], TRUE, &windowRect);
+    SetConsoleWindowInfo(hBuffer[1], TRUE, &windowRect);
+
+    // 隐藏光标
     CONSOLE_CURSOR_INFO cursorInfo;
     for (int i = 0; i < 2; i++) {
         GetConsoleCursorInfo(hBuffer[i], &cursorInfo);
@@ -61,42 +69,35 @@ void InitConsole() {
         SetConsoleCursorInfo(hBuffer[i], &cursorInfo);
     }
 
-    // 设置两个缓冲区大小与窗口一致
-    CONSOLE_SCREEN_BUFFER_INFO csbi;
-    GetConsoleScreenBufferInfo(hBuffer[0], &csbi);
-    COORD size = { (SHORT)SCREEN_WIDTH, (SHORT)SCREEN_HEIGHT };
-    SetConsoleScreenBufferSize(hBuffer[0], size);
-    SetConsoleScreenBufferSize(hBuffer[1], size);
-
-    // 初始显示第一个缓冲区
+    // 显示第一个缓冲区
     SetConsoleActiveScreenBuffer(hBuffer[0]);
+    currentFront = 0;
 }
 
-// 绘制一帧（写入后台缓冲区，然后切换）
+// ---------- 绘制（双缓冲切换） ----------
 void Draw() {
-    // 获取后台缓冲区（当前前台缓冲区的另一个）
     int back = 1 - currentFront;
     HANDLE hBack = hBuffer[back];
 
-    // 1. 清空屏幕矩阵（全部设为空格）
+    // 1. 清空屏幕矩阵（全部填充空格）
     for (int y = 0; y < SCREEN_HEIGHT; y++) {
         for (int x = 0; x < SCREEN_WIDTH; x++) {
             screen[y][x] = ' ';
         }
     }
 
-    // 2. 绘制地面（一行横线）
+    // 2. 绘制地面（横线）
     for (int x = 0; x < SCREEN_WIDTH; x++) {
         screen[GROUND_Y][x] = '-';
     }
 
-    // 3. 绘制人物（用 'D' 表示）
+    // 3. 绘制恐龙
     int dinoRow = (int)dinoY;
-    if (dinoRow >= 0 && dinoRow < SCREEN_HEIGHT && DINO_X >= 0 && DINO_X < SCREEN_WIDTH) {
+    if (dinoRow >= 0 && dinoRow < SCREEN_HEIGHT) {
         screen[dinoRow][DINO_X] = 'D';
     }
 
-    // 4. 绘制所有平台
+    // 4. 绘制平台
     for (int px : platforms) {
         for (int i = 0; i < PLATFORM_WIDTH; i++) {
             int col = px + i;
@@ -107,24 +108,30 @@ void Draw() {
     }
 
     // 5. 显示分数（左上角）
-    char scoreStr[16];
+    char scoreStr[32];
     sprintf_s(scoreStr, "Score: %d", score / 10);
-    int len = (int)strlen(scoreStr);
-    for (int i = 0; i < len && i < SCREEN_WIDTH; i++) {
+    for (int i = 0; i < (int)strlen(scoreStr) && i < SCREEN_WIDTH; i++) {
         screen[0][i] = scoreStr[i];
     }
 
-    // 6. 将整个字符矩阵写入后台缓冲区
+    // 6. 将矩阵逐行写入后台缓冲区（更稳定）
     DWORD bytesWritten;
-    COORD topLeft = { 0, 0 };
-    WriteConsoleOutputCharacterA(hBack, (char*)screen, SCREEN_WIDTH * SCREEN_HEIGHT, topLeft, &bytesWritten);
+    COORD writeCoord = { 0, 0 };
+    for (int y = 0; y < SCREEN_HEIGHT; y++) {
+        writeCoord.Y = y;
+        writeCoord.X = 0;
+        // 写入一整行
+        if (!WriteConsoleOutputCharacterA(hBack, screen[y], SCREEN_WIDTH, writeCoord, &bytesWritten)) {
+            // 如果失败，可忽略或尝试其他方法（但一般不会）
+        }
+    }
 
-    // 7. 切换前台缓冲区
+    // 7. 切换缓冲区
     SetConsoleActiveScreenBuffer(hBack);
-    currentFront = back;  // 更新当前前台索引
+    currentFront = back;
 }
 
-// 更新逻辑（与原代码相同，略作调整）
+// ---------- 更新逻辑 ----------
 void Update() {
     // 物理
     if (isJumping) {
@@ -147,7 +154,7 @@ void Update() {
         platforms.erase(platforms.begin());
     }
 
-    // 生成新平台（等距）
+    // 生成新平台
     if (platforms.empty()) {
         platforms.push_back(SCREEN_WIDTH - PLATFORM_WIDTH);
     } else {
@@ -172,7 +179,7 @@ void Update() {
 
         if (dinoLeft < platRight && dinoRight > platLeft &&
             dinoTop < platBottom && dinoBottom > platTop) {
-            rgameOver = true;
+            gameOver = true;
             break;
         }
     }
@@ -180,7 +187,7 @@ void Update() {
     score++;
 }
 
-// 键盘输入r
+// ---------- 输入处理 ----------
 void HandleInput() {
     if (_kbhit()) {
         char ch = _getch();
@@ -192,7 +199,7 @@ void HandleInput() {
     }
 }
 
-// 重置游戏
+// ---------- 重置游戏 ----------
 void ResetGame() {
     gameOver = false;
     score = 0;
@@ -203,15 +210,19 @@ void ResetGame() {
     platforms.push_back(SCREEN_WIDTH - PLATFORM_WIDTH);
 }
 
+// ---------- 主循环 ----------
 int main() {
     srand((unsigned)time(nullptr));
     InitConsole();
 
     ResetGame();
 
+    // 强制绘制初始画面
+    Draw();
+
     while (true) {
         if (gameOver) {
-            // 清屏显示 Game Over（直接在前台缓冲区写消息，不进入双缓冲循环）
+            // 显示 Game Over（直接操作前台缓冲区）
             HANDLE hFront = hBuffer[currentFront];
             DWORD written;
             COORD topLeft = { 0, 0 };
@@ -225,12 +236,12 @@ int main() {
             SetConsoleCursorPosition(hFront, { SCREEN_WIDTH / 2 - 10, SCREEN_HEIGHT / 2 + 2 });
             WriteConsoleA(hFront, "Press 'r' to restart, ESC to exit", 34, &written, NULL);
 
-            // 等待按键
             while (true) {
                 if (_kbhit()) {
                     char ch = _getch();
                     if (ch == 'r') {
                         ResetGame();
+                        Draw();  // 立即刷新画面
                         break;
                     } else if (ch == 27) {
                         return 0;
@@ -245,7 +256,7 @@ int main() {
         Update();
         Draw();
 
-        Sleep(30);  // 约 33 FPS
+        Sleep(30);
     }
 
     return 0;
