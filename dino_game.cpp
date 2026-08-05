@@ -17,10 +17,10 @@ const int PLATFORM_WIDTH = 1;
 const int PLATFORM_SPEED = 1;
 const double GRAVITY = 0.15;
 
-// 跳跃速度范围（最高速度再降0.1）
+// 跳跃速度范围（最大速度调低，确保不越顶）
 const double JUMP_VEL_MIN = -0.775;   // 最低跳跃速度（上升2格）
-const double JUMP_VEL_MAX = -0.80;    // 最高跳跃速度（上升约2.13格），比之前更低
-const double BOOST_ACCEL = -0.13;     // 按住空格时向上加速度（较慢，延长按键时间）
+const double JUMP_VEL_MAX = -0.80;    // 最高跳跃速度（上升约2.13格）
+const double BOOST_ACCEL = -0.13;     // 按住空格时向上加速度
 
 const int MIN_GAP = 8;
 const int MAX_GAP = 40;
@@ -33,6 +33,7 @@ double dinoY = GROUND_Y;
 double dinoVy = 0.0;
 bool isJumping = false;
 bool spacePressed = false;
+bool reachedMaxSpeed = false;   // 标记是否已达到最大速度
 
 vector<int> platforms;
 
@@ -120,26 +121,26 @@ void Draw() {
 // ---------- 更新 ----------
 void Update(double deltaTime) {
     if (isJumping) {
-        // 重力
+        // 重力始终作用
         dinoVy += GRAVITY;
 
         // 按住空格且未达到最大速度时加速
-        if (spacePressed) {
-            // 当前速度大于最大速度（即还允许继续加速上升）
-            if (dinoVy > JUMP_VEL_MAX) {
-                dinoVy += BOOST_ACCEL;
-                // 确保不超过最大速度
-                if (dinoVy < JUMP_VEL_MAX)
-                    dinoVy = JUMP_VEL_MAX;
+        if (spacePressed && !reachedMaxSpeed) {
+            dinoVy += BOOST_ACCEL;
+            if (dinoVy <= JUMP_VEL_MAX) { // 达到或超过最大速度
+                dinoVy = JUMP_VEL_MAX;
+                reachedMaxSpeed = true;   // 标记已达到，后续不再加速
             }
         }
 
         dinoY += dinoVy;
 
+        // 落地检测
         if (dinoY >= GROUND_Y) {
             dinoY = GROUND_Y;
             dinoVy = 0.0;
             isJumping = false;
+            reachedMaxSpeed = false;   // 重置标志
         }
     }
 
@@ -201,6 +202,7 @@ void UpdateInput() {
         if (isSpaceDown && !spacePressed) {
             dinoVy = JUMP_VEL_MIN;
             isJumping = true;
+            reachedMaxSpeed = false;   // 新跳跃重置标志
         }
     }
 
@@ -218,6 +220,7 @@ void ResetGame() {
     dinoVy = 0.0;
     isJumping = false;
     spacePressed = false;
+    reachedMaxSpeed = false;
     platforms.clear();
     platforms.push_back(SCREEN_WIDTH - PLATFORM_WIDTH + rand() % 20);
 }
