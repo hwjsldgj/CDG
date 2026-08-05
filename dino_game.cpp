@@ -11,9 +11,9 @@ using namespace std;
 // ===== 参数配置 =====
 const int SCREEN_WIDTH = 80;
 const int SCREEN_HEIGHT = 25;
-const int GROUND_Y = 10;            // 地面行
-const int DINO_X = 5;               // 恐龙固定列
-const int PLATFORM_WIDTH = 1;       // 障碍物宽度（格）
+const int GROUND_Y = 10;
+const int DINO_X = 5;
+const int PLATFORM_WIDTH = 1;
 const int PLATFORM_SPEED = 1;
 const double GRAVITY = 0.2;
 const double JUMP_SPEED = -1.8;
@@ -21,9 +21,12 @@ const double JUMP_SPEED = -1.8;
 const int DINO_HEIGHT = 2;
 const int OBSTACLE_HEIGHT = 2;
 
-// 随机间距范围
+// 随机间距范围（上限提高至40）
 const int MIN_GAP = 8;
-const int MAX_GAP = 25;
+const int MAX_GAP = 40;
+
+// 碰撞判定阈值（水平距离小于此值即判定碰撞）
+const double COLLISION_DIST_THRESHOLD = 1;
 
 bool gameOver = false;
 int score = 0;
@@ -32,7 +35,7 @@ double dinoY = GROUND_Y;
 double dinoVy = 0.0;
 bool isJumping = false;
 
-vector<int> platforms;              // 每个障碍物左边缘 x
+vector<int> platforms;
 
 HANDLE hBuffer[2];
 int currentFront = 0;
@@ -70,45 +73,41 @@ void InitConsole() {
     currentFront = 0;
 }
 
-// ---------- 绘制（双缓冲） ----------
+// ---------- 绘制 ----------
 void Draw() {
     int back = 1 - currentFront;
     HANDLE hBack = hBuffer[back];
 
-    // 清空矩阵
     for (int y = 0; y < SCREEN_HEIGHT; y++)
         for (int x = 0; x < SCREEN_WIDTH; x++)
             screen[y][x] = ' ';
 
-    // 地面（横线）
     for (int x = 0; x < SCREEN_WIDTH; x++)
         screen[GROUND_Y][x] = '-';
 
-    // 绘制人物（两格高，一格宽）
-    int dinoRow = (int)dinoY;               // 底部
-    int topRow = dinoRow - 1;               // 顶部
+    // 人物（两格）
+    int dinoRow = (int)dinoY;
+    int topRow = dinoRow - 1;
     if (topRow >= 0 && topRow < SCREEN_HEIGHT)
         screen[topRow][DINO_X] = 'D';
     if (dinoRow >= 0 && dinoRow < SCREEN_HEIGHT)
         screen[dinoRow][DINO_X] = 'D';
 
-    // 绘制障碍物（两格高，一格宽）
+    // 障碍物（两格高，一格宽）
     for (int px : platforms) {
         int col = px;
         if (col >= 0 && col < SCREEN_WIDTH) {
-            screen[GROUND_Y][col] = '#';         // 底部
+            screen[GROUND_Y][col] = '#';
             if (GROUND_Y - 1 >= 0)
-                screen[GROUND_Y - 1][col] = '#'; // 顶部
+                screen[GROUND_Y - 1][col] = '#';
         }
     }
 
-    // 分数
     char scoreStr[32];
     sprintf_s(scoreStr, "Score: %d", score / 10);
     for (int i = 0; i < (int)strlen(scoreStr) && i < SCREEN_WIDTH; i++)
         screen[0][i] = scoreStr[i];
 
-    // 逐行写入后台缓冲区
     DWORD bytesWritten;
     COORD writeCoord = { 0, 0 };
     for (int y = 0; y < SCREEN_HEIGHT; y++) {
@@ -121,7 +120,7 @@ void Draw() {
     currentFront = back;
 }
 
-// ---------- 更新逻辑 ----------
+// ---------- 更新 ----------
 void Update() {
     // 物理
     if (isJumping) {
@@ -138,39 +137,50 @@ void Update() {
     for (int& x : platforms)
         x -= PLATFORM_SPEED;
 
-    // 移除左侧外的
     while (!platforms.empty() && platforms.front() + PLATFORM_WIDTH < 0)
         platforms.erase(platforms.begin());
 
-    // 生成新障碍物（随机间距）
+    // 生成新障碍物（随机间距，上限40）
     if (platforms.empty()) {
-        // 首个障碍物从右侧出现
         platforms.push_back(SCREEN_WIDTH - PLATFORM_WIDTH);
     } else {
         int lastX = platforms.back();
-        // 当最后一个障碍物完全出现在屏幕内且距离右边界足够远时，生成下一个
         if (lastX + PLATFORM_WIDTH < SCREEN_WIDTH - 10) {
-            // 随机间距 [MIN_GAP, MAX_GAP]
             int gap = MIN_GAP + rand() % (MAX_GAP - MIN_GAP + 1);
             int newX = lastX + PLATFORM_WIDTH + gap;
             platforms.push_back(newX);
         }
     }
 
-    // 碰撞检测（人物矩形 vs 障碍物矩形）
+    // ===== 碰撞检测（提前判定） =====
+    // 人物矩形（x固定，y动态）
     int dinoLeft = DINO_X;
-    int dinoRight = DINO_X + 1;                 // 宽度1
-    int dinoTop = (int)dinoY - 1;               // 顶部行
-    int dinoBottom = (int)dinoY;                // 底部行
+    int dinoRight = DINO_X + 1;
+    int dinoTop = (int)dinoY - 1;
+    int dinoBottom = (int)dinoY;
 
     for (int px : platforms) {
         int platLeft = px;
-        int platRight = px + PLATFORM_WIDTH;    // PLATFORM_WIDTH=1
+        int platRight = px + PLATFORM_WIDTH; // = px+1
         int platTop = GROUND_Y - 1;
         int platBottom = GROUND_Y;
 
-        if (dinoLeft < platRight && dinoRight > platLeft &&
-            dinoTop < platBottom && dinoBottom > platTop) {
+        // 垂直方向必须重叠（都在地面附近）
+        bool verticalOverlap = (dinoTop < platBottom && dinoBottom > platTop);
+        if (!verticalOverlap) continue;
+
+        // 计算水平距离（如果重叠则距离为0）
+        int horizontalDist = 0;
+        if (platRight <= dinoLeft) {
+            horizontalDist = dinoLeft - platRight;
+        } else if (platLeft >= dinoRight) {
+            horizontalDist = platLeft - dinoRight;
+        } else {
+            horizontalDist = 0; // 重叠
+        }
+
+        // 如果距离小于阈值则碰撞
+        if (horizontalDist < COLLISION_DIST_THRESHOLD) {
             gameOver = true;
             break;
         }
@@ -179,7 +189,7 @@ void Update() {
     score++;
 }
 
-// ---------- 输入处理 ----------
+// ---------- 输入 ----------
 void HandleInput() {
     if (_kbhit()) {
         char ch = _getch();
@@ -199,7 +209,6 @@ void ResetGame() {
     dinoVy = 0.0;
     isJumping = false;
     platforms.clear();
-    // 第一个障碍物随机出现在右侧较远处
     platforms.push_back(SCREEN_WIDTH - PLATFORM_WIDTH + rand() % 20);
 }
 
@@ -248,4 +257,4 @@ int main() {
     }
 
     return 0;
-}
+}  
