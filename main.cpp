@@ -17,9 +17,9 @@ int main() {
     srand((unsigned)time(nullptr));
     InitConsole();
 
-    // 进入主菜单
     g_state.gameMode = GameState::MENU;
     g_state.menuSelection = 0;
+    g_state.exitConfirm = false;
 
     double accumulator = 0.0;
     LARGE_INTEGER lastPhysicsTime;
@@ -31,7 +31,6 @@ int main() {
         if (g_state.gameMode == GameState::MENU) {
             DrawMenu();
 
-            // 帧率控制
             static LARGE_INTEGER lastDrawTime = {0};
             LARGE_INTEGER now;
             QueryPerformanceCounter(&now);
@@ -64,10 +63,9 @@ int main() {
         }
 
         if (g_state.gameMode == GameState::PLAYING) {
-            // 检查是否因为碰撞导致游戏结束（在 Update 中设置 gameOver）
             if (g_state.gameOver) {
                 g_state.gameMode = GameState::GAMEOVER;
-                UpdateHighScore();   // 确保最高分更新
+                UpdateHighScore();
                 continue;
             }
 
@@ -105,7 +103,6 @@ int main() {
         }
     }
 
-    // 清理（实际上不会执行到）
     for (int i = 0; i < g_config.SCREEN_HEIGHT; ++i)
         delete[] g_state.screen[i];
     delete[] g_state.screen;

@@ -7,14 +7,11 @@
 
 const int MENU_ITEM_COUNT = 2;  // 开始、历史（退出单独）
 
-// 辅助：检测数字键（主键盘或小键盘）
 int GetPressedNumber() {
-    // 主键盘 0-9
     for (int i = 0; i <= 9; ++i) {
         if (GetAsyncKeyState('0' + i) & 0x8000)
             return i;
     }
-    // 小键盘 0-9
     for (int i = 0; i <= 9; ++i) {
         if (GetAsyncKeyState(VK_NUMPAD0 + i) & 0x8000)
             return i;
@@ -25,23 +22,38 @@ int GetPressedNumber() {
 void HandleMenuInput() {
     if (!IsConsoleForeground()) return;
 
-    int num = GetPressedNumber();
-    if (num != -1) {
-        if (num == 0) {
-            // 退出
+    // ---- 退出确认状态 ----
+    if (g_state.exitConfirm) {
+        if (GetAsyncKeyState('Y') & 0x8000) {
+            // 确认退出
             CloseHandle(g_state.hBuffer[0]);
             CloseHandle(g_state.hBuffer[1]);
             timeEndPeriod(1);
             exit(0);
+        }
+        if (GetAsyncKeyState('N') & 0x8000 || GetAsyncKeyState(VK_ESCAPE) & 0x8000) {
+            // 取消退出
+            g_state.exitConfirm = false;
+            Sleep(150);
+        }
+        return;
+    }
+
+    // ---- 正常菜单 ----
+    int num = GetPressedNumber();
+    if (num != -1) {
+        if (num == 0) {
+            // 按 0 或小键盘0 → 显示退出确认
+            g_state.exitConfirm = true;
+            return;
         } else if (num == 1) {
             g_state.gameMode = GameState::PLAYING;
             ResetGame();
             return;
         } else if (num == 2) {
-            // 历史记录占位（可留空或显示提示）
+            // 历史记录占位
             return;
         }
-        // 其他数字忽略
         return;
     }
 
@@ -59,7 +71,7 @@ void HandleMenuInput() {
         return;
     }
 
-    // 回车
+    // 回车确认
     if (GetAsyncKeyState(VK_RETURN) & 0x8000) {
         if (g_state.menuSelection == 0) {
             g_state.gameMode = GameState::PLAYING;
@@ -67,35 +79,36 @@ void HandleMenuInput() {
         } else if (g_state.menuSelection == 1) {
             // 历史占位
         } else if (g_state.menuSelection == 2) {
-            CloseHandle(g_state.hBuffer[0]);
-            CloseHandle(g_state.hBuffer[1]);
-            timeEndPeriod(1);
-            exit(0);
+            // 选中退出项 → 显示确认
+            g_state.exitConfirm = true;
         }
         Sleep(150);
         return;
     }
 
     if (GetAsyncKeyState(VK_ESCAPE) & 0x8000) {
-        CloseHandle(g_state.hBuffer[0]);
-        CloseHandle(g_state.hBuffer[1]);
-        timeEndPeriod(1);
-        exit(0);
+        // 在菜单按 ESC 也显示退出确认
+        g_state.exitConfirm = true;
+        Sleep(150);
     }
 }
 
-// 新增：处理游戏结束界面的输入
 void UpdateGameOverInput() {
     if (!IsConsoleForeground()) return;
+
     if (GetAsyncKeyState('R') & 0x8000) {
-        ResetGame();            // 重置后状态变为 PLAYING
+        ResetGame();
+        Sleep(150);
         return;
     }
+
     if (GetAsyncKeyState(VK_ESCAPE) & 0x8000) {
-        CloseHandle(g_state.hBuffer[0]);
-        CloseHandle(g_state.hBuffer[1]);
-        timeEndPeriod(1);
-        exit(0);
+        // 游戏结束按 ESC → 回到主菜单
+        g_state.gameMode = GameState::MENU;
+        g_state.menuSelection = 0;
+        g_state.exitConfirm = false;
+        Sleep(150);
+        return;
     }
 }
 
@@ -128,9 +141,10 @@ void UpdateInput() {
     }
 
     if (GetAsyncKeyState(VK_ESCAPE) & 0x8000) {
-        CloseHandle(g_state.hBuffer[0]);
-        CloseHandle(g_state.hBuffer[1]);
-        timeEndPeriod(1);
-        exit(0);
+        // 游戏中按 ESC → 回到主菜单
+        g_state.gameMode = GameState::MENU;
+        g_state.menuSelection = 0;
+        g_state.exitConfirm = false;
+        Sleep(150);
     }
 }

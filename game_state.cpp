@@ -17,7 +17,8 @@ GameState::GameState()
     , speedMultiplier(1.0)
     , nextBoostTime(0)
     , currentTime(0.0)
-    , menuSelection(0)                // 默认选中第一项（开始游戏）
+    , menuSelection(0)
+    , exitConfirm(false)            // 新增初始化
     , isRecording(false)
     , isPlaying(false)
     , playbackIndex(0)

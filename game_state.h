@@ -34,7 +34,8 @@ struct GameState {
     LARGE_INTEGER lastBoostTime;
 
     // 菜单
-    int menuSelection;            // 0=开始游戏, 1=历史记录, 2=退出（但退出显示为0）
+    int menuSelection;
+    bool exitConfirm;               // 是否显示退出确认
 
     // 历史记录
     struct HistoryEntry {
