@@ -5,6 +5,7 @@
 #include "input.h"
 #include <cstdlib>
 #include <ctime>
+#include <algorithm>      // 新增
 #include <windows.h>
 
 int main() {
@@ -34,7 +35,7 @@ int main() {
         }
 
         if (g_state.gameOver) {
-            ShowGameOver();  // ShowGameOver 在 render.cpp 中实现，需外部声明
+            ShowGameOver();
             continue;
         }
 
@@ -63,7 +64,7 @@ int main() {
         static LARGE_INTEGER lastDrawTime = {0};
         if (lastDrawTime.QuadPart != 0) {
             double elapsedSinceDraw = (double)(now.QuadPart - lastDrawTime.QuadPart) / (double)g_state.freq.QuadPart;
-            double sleepTime = max(0.0, 1.0 / g_config.TARGET_FPS - elapsedSinceDraw);
+            double sleepTime = std::max(0.0, 1.0 / g_config.TARGET_FPS - elapsedSinceDraw);   // 改为 std::max
             if (sleepTime > 0.001) {
                 Sleep((DWORD)(sleepTime * 1000));
             }
