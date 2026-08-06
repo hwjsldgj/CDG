@@ -36,6 +36,9 @@ GameConfig::GameConfig()
     , GENERATE_THRESHOLD(10.0)
     , INITIAL_PLATFORM_OFFSET(5.0)
     , MAX_PLATFORMS(200)
+    , MAX_GAP_GROWTH_INTERVAL(20.0)    // 新增
+    , MAX_GAP_GROWTH_STEP(0.1)          // 新增
+    , MAX_GAP_MULTIPLIER_MAX(2.0)       // 新增
     , KEY_JUMP(32)
     , KEY_PAUSE(80)
     , KEY_RESTART(82)
@@ -64,7 +67,7 @@ GameConfig::GameConfig()
     , highscorePrefix("最高分：")
     , highscoreNone("暂无记录")
 {
-    // 默认菜单项（仅当配置文件中没有定义时使用）
+    // 默认菜单项
     menuItems.push_back({"开始游戏", "start_game"});
     menuItems.push_back({"最高分记录", "show_highscore"});
     menuItems.push_back({"退出游戏", "exit"});
@@ -74,7 +77,6 @@ GameConfig::GameConfig()
     pauseItems.push_back({"返回主菜单", "back_to_menu"});
 }
 
-// 辅助：替换键位占位符
 static std::string ReplaceKeyPlaceholders(const std::string& text, const GameConfig& cfg) {
     std::string result = text;
     std::vector<std::pair<std::string, std::string>> replacements = {
@@ -97,12 +99,8 @@ static std::string ReplaceKeyPlaceholders(const std::string& text, const GameCon
 
 void LoadConfig(const char* filename) {
     std::ifstream file(filename);
-    if (!file.is_open()) {
-        // 文件不存在，使用默认值（已由构造函数设置）
-        return;
-    }
+    if (!file.is_open()) return;
 
-    // 临时存储从配置文件中读取的菜单项
     std::vector<MenuItem> loadedMenuItems;
     std::vector<MenuItem> loadedPauseItems;
 
@@ -163,6 +161,9 @@ void LoadConfig(const char* filename) {
             if (key == "GENERATE_THRESHOLD") g_config.GENERATE_THRESHOLD = SafeParseDouble(val, 10.0);
             else if (key == "INITIAL_PLATFORM_OFFSET") g_config.INITIAL_PLATFORM_OFFSET = SafeParseDouble(val, 5.0);
             else if (key == "MAX_PLATFORMS") g_config.MAX_PLATFORMS = SafeParseInt(val, 200);
+            else if (key == "MAX_GAP_GROWTH_INTERVAL") g_config.MAX_GAP_GROWTH_INTERVAL = SafeParseDouble(val, 20.0);
+            else if (key == "MAX_GAP_GROWTH_STEP") g_config.MAX_GAP_GROWTH_STEP = SafeParseDouble(val, 0.1);
+            else if (key == "MAX_GAP_MULTIPLIER_MAX") g_config.MAX_GAP_MULTIPLIER_MAX = SafeParseDouble(val, 2.0);
         }
         else if (section == "Keys") {
             if (key == "JUMP_KEY") g_config.KEY_JUMP = SafeParseInt(val, 32);
@@ -226,15 +227,9 @@ void LoadConfig(const char* filename) {
     }
     file.close();
 
-    // 如果配置文件中定义了菜单项，则用它们替换默认项（避免重复）
-    if (!loadedMenuItems.empty()) {
-        g_config.menuItems = loadedMenuItems;
-    }
-    if (!loadedPauseItems.empty()) {
-        g_config.pauseItems = loadedPauseItems;
-    }
+    if (!loadedMenuItems.empty()) g_config.menuItems = loadedMenuItems;
+    if (!loadedPauseItems.empty()) g_config.pauseItems = loadedPauseItems;
 
-    // 替换文字中的键位占位符
     g_config.gameoverRestartHint = ReplaceKeyPlaceholders(g_config.gameoverRestartHint, g_config);
 }
 

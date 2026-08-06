@@ -53,6 +53,10 @@ struct GameConfig {
     double GENERATE_THRESHOLD;
     double INITIAL_PLATFORM_OFFSET;
     int MAX_PLATFORMS;
+    // 动态间距配置
+    double MAX_GAP_GROWTH_INTERVAL;
+    double MAX_GAP_GROWTH_STEP;
+    double MAX_GAP_MULTIPLIER_MAX;
 
     // 键位（虚拟键码）
     int KEY_JUMP;
