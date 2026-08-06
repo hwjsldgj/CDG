@@ -141,108 +141,19 @@ void Draw() {
 }
 
 // ------------------------------------------------------------
-// 游戏结束画面（阻塞循环）
+// 绘制主菜单
 // ------------------------------------------------------------
-void ShowGameOver() {
-    HANDLE hFront = g_state.hBuffer[g_state.currentFront];
-    EnsureBufferSize(hFront);
-
-    DWORD written;
-    COORD topLeft = { 0, 0 };
-    FillConsoleOutputCharacterW(hFront, L' ', g_config.SCREEN_WIDTH * g_config.SCREEN_HEIGHT, topLeft, &written);
-
-    const wchar_t* title = L"游戏结束！";
-    int titleLen = wcslen(title);
-    int titleCols = 0;
-    for (int i = 0; i < titleLen; ++i) {
-        if (title[i] >= 0x4E00 && title[i] <= 0x9FA5)
-            titleCols += 2;
-        else
-            titleCols += 1;
-    }
-
-    wchar_t scoreBuf[64];
-    swprintf(scoreBuf, 64, L"得分：%lld", g_state.score);
-    int scoreLen = wcslen(scoreBuf);
-    int scoreCols = 0;
-    for (int i = 0; i < scoreLen; ++i) {
-        if (scoreBuf[i] >= 0x4E00 && scoreBuf[i] <= 0x9FA5)
-            scoreCols += 2;
-        else
-            scoreCols += 1;
-    }
-
-    wchar_t highScoreBuf[64];
-    swprintf(highScoreBuf, 64, L"最高分：%lld", g_state.highScore);
-    int highScoreLen = wcslen(highScoreBuf);
-    int highScoreCols = 0;
-    for (int i = 0; i < highScoreLen; ++i) {
-        if (highScoreBuf[i] >= 0x4E00 && highScoreBuf[i] <= 0x9FA5)
-            highScoreCols += 2;
-        else
-            highScoreCols += 1;
-    }
-
-    const wchar_t* restartMsg = L"按 R 键重新开始，ESC 键退出";
-    int msgLen = wcslen(restartMsg);
-    int msgCols = 0;
-    for (int i = 0; i < msgLen; ++i) {
-        if (restartMsg[i] >= 0x4E00 && restartMsg[i] <= 0x9FA5)
-            msgCols += 2;
-        else
-            msgCols += 1;
-    }
-
-    int centerY = g_config.SCREEN_HEIGHT / 2 - 2;
-
-    SetConsoleCursorPosition(hFront, { (SHORT)((g_config.SCREEN_WIDTH - titleCols) / 2), (SHORT)centerY });
-    WriteConsoleW(hFront, title, titleLen, &written, NULL);
-
-    SetConsoleCursorPosition(hFront, { (SHORT)((g_config.SCREEN_WIDTH - scoreCols) / 2), (SHORT)(centerY + 1) });
-    WriteConsoleW(hFront, scoreBuf, scoreLen, &written, NULL);
-
-    SetConsoleCursorPosition(hFront, { (SHORT)((g_config.SCREEN_WIDTH - highScoreCols) / 2), (SHORT)(centerY + 2) });
-    WriteConsoleW(hFront, highScoreBuf, highScoreLen, &written, NULL);
-
-    SetConsoleCursorPosition(hFront, { (SHORT)((g_config.SCREEN_WIDTH - msgCols) / 2), (SHORT)(centerY + 3) });
-    WriteConsoleW(hFront, restartMsg, msgLen, &written, NULL);
-
-    while (true) {
-        if (!IsConsoleForeground()) {
-            Sleep(50);
-            continue;
-        }
-        if (GetAsyncKeyState('R') & 0x8000) {
-            ResetGame();
-            Draw();
-            break;
-        } else if (GetAsyncKeyState(VK_ESCAPE) & 0x8000) {
-            CloseHandle(g_state.hBuffer[0]);
-            CloseHandle(g_state.hBuffer[1]);
-            timeEndPeriod(1);
-            exit(0);
-        }
-        Sleep(50);
-    }
-}
-// 在 render.cpp 末尾添加 DrawMenu 实现
 void DrawMenu() {
     int back = 1 - g_state.currentFront;
     HANDLE hBack = g_state.hBuffer[back];
-
     EnsureBufferSize(hBack);
 
-    // 清空屏幕
+    // 清屏
     COORD topLeft = {0, 0};
     DWORD written;
     FillConsoleOutputCharacterW(hBack, L' ', g_config.SCREEN_WIDTH * g_config.SCREEN_HEIGHT, topLeft, &written);
 
-    // 标题
-    const wchar_t* title1 = L"=== 恐龙跑酷 ===";
-    const wchar_t* title2 = L"(Dino Run)";
-    int title1Len = wcslen(title1);
-    int title2Len = wcslen(title2);
-    // 计算视觉宽度（中文占2列，英文占1）
+    // 视觉宽度辅助（中文2列，英文1列）
     auto visualWidth = [](const wchar_t* str, int len) {
         int w = 0;
         for (int i = 0; i < len; ++i) {
@@ -251,41 +162,38 @@ void DrawMenu() {
         }
         return w;
     };
-    int w1 = visualWidth(title1, title1Len);
-    int w2 = visualWidth(title2, title2Len);
+
+    const wchar_t* title1 = L"=== 恐龙跑酷 ===";
+    const wchar_t* title2 = L"(Dino Run)";
+    int t1Len = wcslen(title1), t2Len = wcslen(title2);
+    int t1w = visualWidth(title1, t1Len);
+    int t2w = visualWidth(title2, t2Len);
 
     int centerX = g_config.SCREEN_WIDTH / 2;
     int startY = g_config.SCREEN_HEIGHT / 2 - 5;
 
-    SetConsoleCursorPosition(hBack, { (SHORT)(centerX - w1/2), (SHORT)startY });
-    WriteConsoleW(hBack, title1, title1Len, &written, NULL);
+    SetConsoleCursorPosition(hBack, { (SHORT)(centerX - t1w/2), (SHORT)startY });
+    WriteConsoleW(hBack, title1, t1Len, &written, NULL);
 
-    SetConsoleCursorPosition(hBack, { (SHORT)(centerX - w2/2), (SHORT)(startY + 1) });
-    WriteConsoleW(hBack, title2, title2Len, &written, NULL);
+    SetConsoleCursorPosition(hBack, { (SHORT)(centerX - t2w/2), (SHORT)(startY + 1) });
+    WriteConsoleW(hBack, title2, t2Len, &written, NULL);
 
-    // 菜单项（显示编号）
+    // 菜单项（显示编号，退出在最下方编号0）
     const wchar_t* items[3][2] = {
         { L"1. 开始游戏", L"1. Start Game" },
         { L"2. 历史记录", L"2. History" },
         { L"0. 退出游戏", L"0. Exit" }
     };
-    // 实际显示顺序：先显示项0（编号1），项1（编号2），最后项2（编号0）
-    int order[3] = {0, 1, 2}; // 对应 items 索引
-    // menuSelection 0->开始，1->历史，2->退出，与绘制顺序一致（因为退出在最后）
-    // 但绘制时退出在最下方，编号为0，所以 items[2] 显示为 "0. 退出游戏"
-
+    // 顺序：开始、历史、退出
     for (int i = 0; i < 3; ++i) {
-        int idx = order[i];
-        const wchar_t* text = items[idx][0]; // 中文
+        const wchar_t* text = items[i][0]; // 中文
         int len = wcslen(text);
         int visW = visualWidth(text, len);
         int x = centerX - visW / 2;
         int y = startY + 3 + i * 2;
 
-        // 判断是否当前选中
-        bool selected = (g_state.menuSelection == idx);
+        bool selected = (g_state.menuSelection == i);
         if (selected) {
-            // 用 '>' 和 '<' 包裹
             wchar_t buffer[64];
             swprintf(buffer, 64, L"> %ls <", text);
             int bufLen = wcslen(buffer);
@@ -300,13 +208,64 @@ void DrawMenu() {
     }
 
     // 操作提示
-    const wchar_t* hint = L"↑ ↓ 选择  Enter 确认  数字键 1/2/0 快速选择";
+    const wchar_t* hint = L"↑ ↓ 选择  Enter 确认  数字键 1/2/0 快速选择 (小键盘支持)";
     int hintLen = wcslen(hint);
     int hintVis = visualWidth(hint, hintLen);
     SetConsoleCursorPosition(hBack, { (SHORT)(centerX - hintVis/2), (SHORT)(startY + 3 + 3*2 + 1) });
     WriteConsoleW(hBack, hint, hintLen, &written, NULL);
 
-    // 切换缓冲区
+    SetConsoleActiveScreenBuffer(hBack);
+    g_state.currentFront = back;
+}
+
+// ------------------------------------------------------------
+// 绘制游戏结束画面（非阻塞）
+// ------------------------------------------------------------
+void DrawGameOver() {
+    int back = 1 - g_state.currentFront;
+    HANDLE hBack = g_state.hBuffer[back];
+    EnsureBufferSize(hBack);
+
+    COORD topLeft = {0, 0};
+    DWORD written;
+    FillConsoleOutputCharacterW(hBack, L' ', g_config.SCREEN_WIDTH * g_config.SCREEN_HEIGHT, topLeft, &written);
+
+    auto visualWidth = [](const wchar_t* str, int len) {
+        int w = 0;
+        for (int i = 0; i < len; ++i) {
+            if (str[i] >= 0x4E00 && str[i] <= 0x9FA5) w += 2;
+            else w += 1;
+        }
+        return w;
+    };
+
+    const wchar_t* title = L"游戏结束！";
+    wchar_t scoreBuf[64], highBuf[64];
+    swprintf(scoreBuf, 64, L"得分：%lld", g_state.score);
+    swprintf(highBuf, 64, L"最高分：%lld", g_state.highScore);
+    const wchar_t* restartMsg = L"按 R 重新开始  |  ESC 退出";
+
+    int titleLen = wcslen(title), scoreLen = wcslen(scoreBuf), highLen = wcslen(highBuf), msgLen = wcslen(restartMsg);
+    int tw = visualWidth(title, titleLen);
+    int sw = visualWidth(scoreBuf, scoreLen);
+    int hw = visualWidth(highBuf, highLen);
+    int mw = visualWidth(restartMsg, msgLen);
+
+    int centerX = g_config.SCREEN_WIDTH / 2;
+    int centerY = g_config.SCREEN_HEIGHT / 2 - 2;
+
+    SetConsoleCursorPosition(hBack, { (SHORT)(centerX - tw/2), (SHORT)centerY });
+    WriteConsoleW(hBack, title, titleLen, &written, NULL);
+
+    SetConsoleCursorPosition(hBack, { (SHORT)(centerX - sw/2), (SHORT)(centerY + 1) });
+    WriteConsoleW(hBack, scoreBuf, scoreLen, &written, NULL);
+
+    SetConsoleCursorPosition(hBack, { (SHORT)(centerX - hw/2), (SHORT)(centerY + 2) });
+    WriteConsoleW(hBack, highBuf, highLen, &written, NULL);
+
+    SetConsoleCursorPosition(hBack, { (SHORT)(centerX - mw/2), (SHORT)(centerY + 3) });
+    WriteConsoleW(hBack, restartMsg, msgLen, &written, NULL);
+
     SetConsoleActiveScreenBuffer(hBack);
     g_state.currentFront = back;
 }

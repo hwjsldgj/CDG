@@ -19,7 +19,7 @@ int main() {
 
     // 进入主菜单
     g_state.gameMode = GameState::MENU;
-    g_state.menuSelection = 0;   // 默认选中"开始游戏"
+    g_state.menuSelection = 0;
 
     double accumulator = 0.0;
     LARGE_INTEGER lastPhysicsTime;
@@ -29,7 +29,6 @@ int main() {
         UpdateInput();
 
         if (g_state.gameMode == GameState::MENU) {
-            // 绘制菜单
             DrawMenu();
 
             // 帧率控制
@@ -47,10 +46,28 @@ int main() {
             continue;
         }
 
+        if (g_state.gameMode == GameState::GAMEOVER) {
+            DrawGameOver();
+
+            static LARGE_INTEGER lastDrawTime = {0};
+            LARGE_INTEGER now;
+            QueryPerformanceCounter(&now);
+            if (lastDrawTime.QuadPart != 0) {
+                double elapsed = (double)(now.QuadPart - lastDrawTime.QuadPart) / (double)g_state.freq.QuadPart;
+                double sleepTime = std::max(0.0, 1.0 / g_config.TARGET_FPS - elapsed);
+                if (sleepTime > 0.001) {
+                    Sleep((DWORD)(sleepTime * 1000));
+                }
+            }
+            lastDrawTime = now;
+            continue;
+        }
+
         if (g_state.gameMode == GameState::PLAYING) {
-            // 游戏进行中
+            // 检查是否因为碰撞导致游戏结束（在 Update 中设置 gameOver）
             if (g_state.gameOver) {
-                ShowGameOver();
+                g_state.gameMode = GameState::GAMEOVER;
+                UpdateHighScore();   // 确保最高分更新
                 continue;
             }
 
@@ -88,7 +105,7 @@ int main() {
         }
     }
 
-    // 清理资源（实际上不会执行到这里）
+    // 清理（实际上不会执行到）
     for (int i = 0; i < g_config.SCREEN_HEIGHT; ++i)
         delete[] g_state.screen[i];
     delete[] g_state.screen;
