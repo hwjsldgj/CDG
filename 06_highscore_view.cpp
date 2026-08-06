@@ -34,10 +34,10 @@ void HighScore_Draw() {
         localtime_s(&timeinfo, &g_state.highScoreTime);
         wchar_t timeStr[64];
         wcsftime(timeStr, 64, L"%Y-%m-%d %H:%M", &timeinfo);
-        swprintf(scoreLine, 128, L"%s%lld  产生时间：%ls",
+        swprintf(scoreLine, 128, L"%ls%lld  产生时间：%ls",
                  Utf8ToWide(g_config.highscorePrefix).c_str(), g_state.highScore, timeStr);
     } else {
-        swprintf(scoreLine, 128, L"%s0  （%ls）",
+        swprintf(scoreLine, 128, L"%ls0  （%ls）",
                  Utf8ToWide(g_config.highscorePrefix).c_str(),
                  Utf8ToWide(g_config.highscoreNone).c_str());
     }
@@ -57,7 +57,6 @@ void HighScore_Draw() {
 
 void HighScore_HandleInput() {
     if (!IsConsoleForeground()) return;
-    // 任意键返回主菜单
     if (GetAsyncKeyState(g_config.KEY_CANCEL) & 0x8000 ||
         GetAsyncKeyState(g_config.KEY_CONFIRM) & 0x8000 ||
         GetAsyncKeyState(g_config.KEY_JUMP) & 0x8000 ||

@@ -64,6 +64,7 @@ GameConfig::GameConfig()
     , highscorePrefix("最高分：")
     , highscoreNone("暂无记录")
 {
+    // 默认菜单项（仅当配置文件中没有定义时使用）
     menuItems.push_back({"开始游戏", "start_game"});
     menuItems.push_back({"最高分记录", "show_highscore"});
     menuItems.push_back({"退出游戏", "exit"});
@@ -96,7 +97,14 @@ static std::string ReplaceKeyPlaceholders(const std::string& text, const GameCon
 
 void LoadConfig(const char* filename) {
     std::ifstream file(filename);
-    if (!file.is_open()) return;
+    if (!file.is_open()) {
+        // 文件不存在，使用默认值（已由构造函数设置）
+        return;
+    }
+
+    // 临时存储从配置文件中读取的菜单项
+    std::vector<MenuItem> loadedMenuItems;
+    std::vector<MenuItem> loadedPauseItems;
 
     std::string line, section;
     while (std::getline(file, line)) {
@@ -184,7 +192,7 @@ void LoadConfig(const char* filename) {
                     item.label = val.substr(0, sep);
                     item.action = val.substr(sep + 1);
                     Trim(item.label); Trim(item.action);
-                    g_config.menuItems.push_back(item);
+                    loadedMenuItems.push_back(item);
                 }
             }
         }
@@ -198,7 +206,7 @@ void LoadConfig(const char* filename) {
                     item.label = val.substr(0, sep);
                     item.action = val.substr(sep + 1);
                     Trim(item.label); Trim(item.action);
-                    g_config.pauseItems.push_back(item);
+                    loadedPauseItems.push_back(item);
                 }
             }
         }
@@ -218,9 +226,16 @@ void LoadConfig(const char* filename) {
     }
     file.close();
 
-    // 替换文字中的键位占位符（仅对包含占位符的字段处理）
+    // 如果配置文件中定义了菜单项，则用它们替换默认项（避免重复）
+    if (!loadedMenuItems.empty()) {
+        g_config.menuItems = loadedMenuItems;
+    }
+    if (!loadedPauseItems.empty()) {
+        g_config.pauseItems = loadedPauseItems;
+    }
+
+    // 替换文字中的键位占位符
     g_config.gameoverRestartHint = ReplaceKeyPlaceholders(g_config.gameoverRestartHint, g_config);
-    // 其他需要替换的字段也可在此处理
 }
 
 GameConfig g_config;

@@ -2,8 +2,8 @@
 #include "config.h"
 #include "game_state.h"
 #include "console.h"
-#include "menu_view.h"
 #include "utils.h"
+#include "menu_view.h"
 #include <windows.h>
 #include <string>
 #include <ctime>
@@ -21,30 +21,42 @@ void GameOver_Draw() {
     DWORD written;
     FillConsoleOutputCharacterW(hBack, L' ', g_config.SCREEN_WIDTH * g_config.SCREEN_HEIGHT, topLeft, &written);
 
+    // 标题居中
     std::wstring title = Utf8ToWide(g_config.gameoverTitle);
-    wchar_t scoreBuf[64], highBuf[64];
-    swprintf(scoreBuf, 64, L"%s%lld", Utf8ToWide(g_config.scorePrefix).c_str(), g_state.score);
-    swprintf(highBuf, 64, L"%s%lld", Utf8ToWide(g_config.highscorePrefix).c_str(), g_state.highScore);
-
-    std::wstring restartHint = Utf8ToWide(g_config.gameoverRestartHint);
-
     int centerX = g_config.SCREEN_WIDTH / 2;
     int centerY = g_config.SCREEN_HEIGHT / 2 - 2;
-
     int tw = VisualWidth(title);
-    int sw = VisualWidth(scoreBuf, wcslen(scoreBuf));
-    int hw = VisualWidth(highBuf, wcslen(highBuf));
-    int mw = VisualWidth(restartHint);
-
     SetConsoleCursorPosition(hBack, { (SHORT)(centerX - tw/2), (SHORT)centerY });
     WriteConsoleW(hBack, title.c_str(), title.length(), &written, NULL);
 
-    SetConsoleCursorPosition(hBack, { (SHORT)(centerX - sw/2), (SHORT)(centerY + 1) });
-    WriteConsoleW(hBack, scoreBuf, wcslen(scoreBuf), &written, NULL);
+    // 构建得分和最高分文本
+    std::wstring scoreText = Utf8ToWide(g_config.scorePrefix) + std::to_wstring(g_state.score);
+    std::wstring highText = Utf8ToWide(g_config.highscorePrefix) + std::to_wstring(g_state.highScore);
 
-    SetConsoleCursorPosition(hBack, { (SHORT)(centerX - hw/2), (SHORT)(centerY + 2) });
-    WriteConsoleW(hBack, highBuf, wcslen(highBuf), &written, NULL);
+    // 固定冒号位置：冒号列 = SCREEN_WIDTH - 5（距右边缘5格）
+    int colonCol = g_config.SCREEN_WIDTH - 5;
 
+    // 绘制得分
+    size_t colonPos = scoreText.find(L'：');
+    if (colonPos == std::wstring::npos) colonPos = 0;
+    int prefixWidth = VisualWidth(scoreText.substr(0, colonPos));
+    int startX = colonCol - prefixWidth;
+    if (startX < 0) startX = 0;
+    SetConsoleCursorPosition(hBack, { (SHORT)startX, (SHORT)(centerY + 1) });
+    WriteConsoleW(hBack, scoreText.c_str(), scoreText.length(), &written, NULL);
+
+    // 绘制最高分
+    colonPos = highText.find(L'：');
+    if (colonPos == std::wstring::npos) colonPos = 0;
+    prefixWidth = VisualWidth(highText.substr(0, colonPos));
+    startX = colonCol - prefixWidth;
+    if (startX < 0) startX = 0;
+    SetConsoleCursorPosition(hBack, { (SHORT)startX, (SHORT)(centerY + 2) });
+    WriteConsoleW(hBack, highText.c_str(), highText.length(), &written, NULL);
+
+    // 操作提示（居中）
+    std::wstring restartHint = Utf8ToWide(g_config.gameoverRestartHint);
+    int mw = VisualWidth(restartHint);
     SetConsoleCursorPosition(hBack, { (SHORT)(centerX - mw/2), (SHORT)(centerY + 3) });
     WriteConsoleW(hBack, restartHint.c_str(), restartHint.length(), &written, NULL);
 
@@ -63,7 +75,7 @@ void GameOver_HandleInput() {
     }
     if (GetAsyncKeyState(g_config.KEY_CANCEL) & 0x8000) {
         g_state.gameMode = GameState::MENU;
-        Menu_ResetExitConfirm(); // 需要包含 menu_view.h
+        Menu_ResetExitConfirm();
         Sleep(150);
         return;
     }
