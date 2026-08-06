@@ -1,0 +1,122 @@
+#include "pause_view.h"
+#include "config.h"
+#include "game_state.h"
+#include "console.h"
+#include "utils.h"
+#include "menu_view.h"
+#include <windows.h>
+#include <vector>
+#include <string>
+#include <cstdlib>
+
+static std::vector<MenuItem> g_pauseItems;
+static int g_selectedIndex = 0;
+
+static void ExecutePauseAction(int idx) {
+    if (idx < 0 || idx >= (int)g_pauseItems.size()) return;
+    const std::string& action = g_pauseItems[idx].action;
+    if (action == "resume") {
+        g_state.gameMode = GameState::PLAYING;
+    } else if (action == "restart") {
+        ResetGame();
+        g_state.gameMode = GameState::PLAYING;
+    } else if (action == "back_to_menu") {
+        g_state.gameMode = GameState::MENU;
+        Menu_ResetExitConfirm(); // 需要声明在 menu_view.h 中
+    }
+}
+
+void Pause_Init() {
+    g_pauseItems = g_config.pauseItems;
+    g_selectedIndex = 0;
+}
+
+void Pause_Draw() {
+    int back = 1 - g_state.currentFront;
+    HANDLE hBack = g_state.hBuffer[back];
+    EnsureBufferSize(hBack);
+
+    COORD topLeft = {0, 0};
+    DWORD written;
+    FillConsoleOutputCharacterW(hBack, L' ', g_config.SCREEN_WIDTH * g_config.SCREEN_HEIGHT, topLeft, &written);
+
+    std::wstring title = Utf8ToWide(g_config.pauseTitle);
+    int centerX = g_config.SCREEN_WIDTH / 2;
+    int startY = g_config.SCREEN_HEIGHT / 2 - 3;
+
+    int tw = VisualWidth(title);
+    SetConsoleCursorPosition(hBack, { (SHORT)(centerX - tw/2), (SHORT)startY });
+    WriteConsoleW(hBack, title.c_str(), title.length(), &written, NULL);
+
+    for (size_t i = 0; i < g_pauseItems.size(); ++i) {
+        char numBuf[8];
+        snprintf(numBuf, sizeof(numBuf), "%zu.", i + 1);
+        std::string display = std::string(numBuf) + " " + g_pauseItems[i].label;
+        std::wstring wdisplay = Utf8ToWide(display);
+        int visW = VisualWidth(wdisplay);
+        int x = centerX - visW / 2;
+        int y = startY + 2 + (int)i * 2;
+
+        bool selected = (i == (size_t)g_selectedIndex);
+        if (selected) {
+            std::wstring wrapped = L"> " + wdisplay + L" <";
+            int wVis = VisualWidth(wrapped);
+            x = centerX - wVis / 2;
+            SetConsoleCursorPosition(hBack, { (SHORT)x, (SHORT)y });
+            WriteConsoleW(hBack, wrapped.c_str(), wrapped.length(), &written, NULL);
+        } else {
+            SetConsoleCursorPosition(hBack, { (SHORT)x, (SHORT)y });
+            WriteConsoleW(hBack, wdisplay.c_str(), wdisplay.length(), &written, NULL);
+        }
+    }
+
+    std::wstring hint = Utf8ToWide(g_config.pauseHint);
+    int hintVis = VisualWidth(hint);
+    int hintY = startY + 2 + (int)g_pauseItems.size() * 2 + 1;
+    SetConsoleCursorPosition(hBack, { (SHORT)(centerX - hintVis/2), (SHORT)hintY });
+    WriteConsoleW(hBack, hint.c_str(), hint.length(), &written, NULL);
+
+    SetConsoleActiveScreenBuffer(hBack);
+    g_state.currentFront = back;
+}
+
+void Pause_HandleInput() {
+    if (!IsConsoleForeground()) return;
+
+    // 数字键
+    int num = -1;
+    for (int i = 0; i <= 9; ++i) {
+        if (GetAsyncKeyState('0' + i) & 0x8000) { num = i; break; }
+        if (GetAsyncKeyState(VK_NUMPAD0 + i) & 0x8000) { num = i; break; }
+    }
+    if (num != -1) {
+        if (num >= 1 && num <= (int)g_pauseItems.size()) {
+            int idx = num - 1;
+            ExecutePauseAction(idx);
+        }
+        Sleep(150);
+        return;
+    }
+
+    if (GetAsyncKeyState(g_config.KEY_NAV_UP) & 0x8000) {
+        g_selectedIndex--;
+        if (g_selectedIndex < 0) g_selectedIndex = (int)g_pauseItems.size() - 1;
+        Sleep(150);
+        return;
+    }
+    if (GetAsyncKeyState(g_config.KEY_NAV_DOWN) & 0x8000) {
+        g_selectedIndex++;
+        if (g_selectedIndex >= (int)g_pauseItems.size()) g_selectedIndex = 0;
+        Sleep(150);
+        return;
+    }
+    if (GetAsyncKeyState(g_config.KEY_CONFIRM) & 0x8000) {
+        ExecutePauseAction(g_selectedIndex);
+        Sleep(150);
+        return;
+    }
+    if (GetAsyncKeyState(g_config.KEY_CANCEL) & 0x8000 || GetAsyncKeyState(g_config.KEY_PAUSE) & 0x8000) {
+        g_state.gameMode = GameState::PLAYING;
+        Sleep(150);
+    }
+}
