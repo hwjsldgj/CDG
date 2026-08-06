@@ -20,6 +20,7 @@ int main() {
     g_state.gameMode = GameState::MENU;
     g_state.menuSelection = 0;
     g_state.exitConfirm = false;
+    g_state.pauseSelection = 0;
 
     double accumulator = 0.0;
     LARGE_INTEGER lastPhysicsTime;
@@ -30,6 +31,23 @@ int main() {
 
         if (g_state.gameMode == GameState::MENU) {
             DrawMenu();
+
+            static LARGE_INTEGER lastDrawTime = {0};
+            LARGE_INTEGER now;
+            QueryPerformanceCounter(&now);
+            if (lastDrawTime.QuadPart != 0) {
+                double elapsed = (double)(now.QuadPart - lastDrawTime.QuadPart) / (double)g_state.freq.QuadPart;
+                double sleepTime = std::max(0.0, 1.0 / g_config.TARGET_FPS - elapsed);
+                if (sleepTime > 0.001) {
+                    Sleep((DWORD)(sleepTime * 1000));
+                }
+            }
+            lastDrawTime = now;
+            continue;
+        }
+
+        if (g_state.gameMode == GameState::PAUSED) {
+            DrawPauseMenu();
 
             static LARGE_INTEGER lastDrawTime = {0};
             LARGE_INTEGER now;

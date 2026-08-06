@@ -18,7 +18,8 @@ GameState::GameState()
     , nextBoostTime(0)
     , currentTime(0.0)
     , menuSelection(0)
-    , exitConfirm(false)            // 新增初始化
+    , exitConfirm(false)
+    , pauseSelection(0)              // 初始化暂停选项
     , isRecording(false)
     , isPlaying(false)
     , playbackIndex(0)

@@ -22,28 +22,23 @@ int GetPressedNumber() {
 void HandleMenuInput() {
     if (!IsConsoleForeground()) return;
 
-    // ---- 退出确认状态 ----
     if (g_state.exitConfirm) {
         if (GetAsyncKeyState('Y') & 0x8000) {
-            // 确认退出
             CloseHandle(g_state.hBuffer[0]);
             CloseHandle(g_state.hBuffer[1]);
             timeEndPeriod(1);
             exit(0);
         }
         if (GetAsyncKeyState('N') & 0x8000 || GetAsyncKeyState(VK_ESCAPE) & 0x8000) {
-            // 取消退出
             g_state.exitConfirm = false;
             Sleep(150);
         }
         return;
     }
 
-    // ---- 正常菜单 ----
     int num = GetPressedNumber();
     if (num != -1) {
         if (num == 0) {
-            // 按 0 或小键盘0 → 显示退出确认
             g_state.exitConfirm = true;
             return;
         } else if (num == 1) {
@@ -51,13 +46,12 @@ void HandleMenuInput() {
             ResetGame();
             return;
         } else if (num == 2) {
-            // 历史记录占位
+            // 历史占位
             return;
         }
         return;
     }
 
-    // 上下键
     if (GetAsyncKeyState(VK_UP) & 0x8000) {
         g_state.menuSelection--;
         if (g_state.menuSelection < 0) g_state.menuSelection = MENU_ITEM_COUNT;
@@ -71,7 +65,6 @@ void HandleMenuInput() {
         return;
     }
 
-    // 回车确认
     if (GetAsyncKeyState(VK_RETURN) & 0x8000) {
         if (g_state.menuSelection == 0) {
             g_state.gameMode = GameState::PLAYING;
@@ -79,7 +72,6 @@ void HandleMenuInput() {
         } else if (g_state.menuSelection == 1) {
             // 历史占位
         } else if (g_state.menuSelection == 2) {
-            // 选中退出项 → 显示确认
             g_state.exitConfirm = true;
         }
         Sleep(150);
@@ -87,9 +79,76 @@ void HandleMenuInput() {
     }
 
     if (GetAsyncKeyState(VK_ESCAPE) & 0x8000) {
-        // 在菜单按 ESC 也显示退出确认
         g_state.exitConfirm = true;
         Sleep(150);
+    }
+}
+
+void HandlePauseInput() {
+    if (!IsConsoleForeground()) return;
+
+    int num = GetPressedNumber();
+    if (num != -1) {
+        if (num == 1) {
+            // 继续游戏
+            g_state.gameMode = GameState::PLAYING;
+            return;
+        } else if (num == 2) {
+            // 重新开始
+            ResetGame();
+            g_state.gameMode = GameState::PLAYING;
+            return;
+        } else if (num == 3) {
+            // 返回主菜单
+            g_state.gameMode = GameState::MENU;
+            g_state.menuSelection = 0;
+            g_state.exitConfirm = false;
+            return;
+        }
+        // 其他数字忽略
+        return;
+    }
+
+    // 上下键
+    if (GetAsyncKeyState(VK_UP) & 0x8000) {
+        g_state.pauseSelection--;
+        if (g_state.pauseSelection < 0) g_state.pauseSelection = 2;
+        Sleep(150);
+        return;
+    }
+    if (GetAsyncKeyState(VK_DOWN) & 0x8000) {
+        g_state.pauseSelection++;
+        if (g_state.pauseSelection > 2) g_state.pauseSelection = 0;
+        Sleep(150);
+        return;
+    }
+
+    // 回车确认
+    if (GetAsyncKeyState(VK_RETURN) & 0x8000) {
+        if (g_state.pauseSelection == 0) {
+            g_state.gameMode = GameState::PLAYING;
+        } else if (g_state.pauseSelection == 1) {
+            ResetGame();
+            g_state.gameMode = GameState::PLAYING;
+        } else if (g_state.pauseSelection == 2) {
+            g_state.gameMode = GameState::MENU;
+            g_state.menuSelection = 0;
+            g_state.exitConfirm = false;
+        }
+        Sleep(150);
+        return;
+    }
+
+    // 按 ESC 或 P 可以退出暂停（继续游戏）
+    if (GetAsyncKeyState(VK_ESCAPE) & 0x8000) {
+        g_state.gameMode = GameState::PLAYING;
+        Sleep(150);
+        return;
+    }
+    if (GetAsyncKeyState('P') & 0x8000) {
+        g_state.gameMode = GameState::PLAYING;
+        Sleep(150);
+        return;
     }
 }
 
@@ -103,7 +162,6 @@ void UpdateGameOverInput() {
     }
 
     if (GetAsyncKeyState(VK_ESCAPE) & 0x8000) {
-        // 游戏结束按 ESC → 回到主菜单
         g_state.gameMode = GameState::MENU;
         g_state.menuSelection = 0;
         g_state.exitConfirm = false;
@@ -125,12 +183,25 @@ void UpdateInput() {
         return;
     }
 
+    if (g_state.gameMode == GameState::PAUSED) {
+        HandlePauseInput();
+        return;
+    }
+
     if (g_state.gameMode == GameState::GAMEOVER) {
         UpdateGameOverInput();
         return;
     }
 
     if (g_state.gameMode == GameState::PLAYING) {
+        // 检测暂停键 P
+        if (GetAsyncKeyState('P') & 0x8000) {
+            g_state.gameMode = GameState::PAUSED;
+            g_state.pauseSelection = 0;   // 默认选中"继续"
+            Sleep(150);
+            return;
+        }
+
         if (!g_state.isJumping && g_state.dinoY >= g_config.GROUND_Y) {
             if (isSpaceDown && !g_state.spacePressed) {
                 g_state.dinoVy = g_config.JUMP_VEL_MAX;
@@ -140,11 +211,12 @@ void UpdateInput() {
         g_state.spacePressed = isSpaceDown;
     }
 
+    // ESC 在游戏中也可以直接暂停（或返回菜单？为了统一，我们让 ESC 也暂停）
     if (GetAsyncKeyState(VK_ESCAPE) & 0x8000) {
-        // 游戏中按 ESC → 回到主菜单
-        g_state.gameMode = GameState::MENU;
-        g_state.menuSelection = 0;
-        g_state.exitConfirm = false;
-        Sleep(150);
+        if (g_state.gameMode == GameState::PLAYING) {
+            g_state.gameMode = GameState::PAUSED;
+            g_state.pauseSelection = 0;
+            Sleep(150);
+        }
     }
 }

@@ -7,7 +7,7 @@
 #include <windows.h>
 
 struct GameState {
-    enum GameMode { MENU, PLAYING, GAMEOVER } gameMode;
+    enum GameMode { MENU, PLAYING, PAUSED, GAMEOVER } gameMode;  // 新增 PAUSED
 
     bool gameOver;
     long long score;
@@ -35,7 +35,10 @@ struct GameState {
 
     // 菜单
     int menuSelection;
-    bool exitConfirm;               // 是否显示退出确认
+    bool exitConfirm;
+
+    // 暂停菜单
+    int pauseSelection;            // 0=继续, 1=重新开始, 2=返回主菜单
 
     // 历史记录
     struct HistoryEntry {
