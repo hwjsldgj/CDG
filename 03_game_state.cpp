@@ -1,5 +1,6 @@
 #include "03_game_state.h"
 #include "01_config.h"
+#include "16_logger.h"
 #include <windows.h>
 
 GameState::GameState()
@@ -24,13 +25,14 @@ GameState::GameState()
     , replayIndex(0)
     , isReplaying(false)
     , lastReplayTime{0}
-    , replaySource(MENU)    // 新增初始化
+    , replaySource(MENU)
     , isPlaying(false)
     , playbackIndex(0)
 {
     freq.QuadPart = 0;
     lastScoreTime.QuadPart = 0;
     lastBoostTime.QuadPart = 0;
+    LOG_DEBUG("游戏状态对象初始化完成");
 }
 
 GameState g_state;
@@ -39,10 +41,12 @@ void UpdateHighScore() {
     if (g_state.score > g_state.highScore) {
         g_state.highScore = g_state.score;
         g_state.highScoreTime = g_state.startTime;
+        LOG_INFO(std::string("更新最高分：") + std::to_string(g_state.highScore) + "，时间戳：" + std::to_string(g_state.startTime));
     }
 }
 
 void ResetGame() {
+    LOG_INFO("重置游戏");
     if (g_state.gameOver) {
         UpdateHighScore();
     }
@@ -73,4 +77,5 @@ void ResetGame() {
     if (g_state.gameMode == GameState::MENU) {
         g_state.gameMode = GameState::PLAYING;
     }
+    LOG_DEBUG("游戏重置完成，当前模式：" + std::to_string(g_state.gameMode));
 }

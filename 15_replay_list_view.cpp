@@ -5,6 +5,7 @@
 #include "11_utils.h"
 #include "09_persist.h"
 #include "13_replay_view.h"
+#include "16_logger.h"
 #include <windows.h>
 #include <vector>
 #include <string>
@@ -23,14 +24,15 @@ struct ReplayItem {
 static std::vector<ReplayItem> g_replayList;
 static int g_selectedIndex = 0;
 static int g_pageOffset = 0;
-static const int PAGE_SIZE = 15;
 
 static void LoadReplayList() {
+    LOG_DEBUG("开始加载回放列表");
     g_replayList.clear();
     std::string path = "data\\*.txt";
     WIN32_FIND_DATAA findData;
     HANDLE hFind = FindFirstFileA(path.c_str(), &findData);
     if (hFind == INVALID_HANDLE_VALUE) {
+        LOG_WARN("回放列表：未找到回放文件");
         struct _finddata_t fileInfo;
         intptr_t handle = _findfirst("data\\*.txt", &fileInfo);
         if (handle == -1) return;
@@ -66,13 +68,17 @@ static void LoadReplayList() {
                     }
                     long long score = std::stoll(numStr);
                     g_replayList.push_back({filename, timeStr, score});
-                } catch (...) {}
+                    LOG_DEBUG(std::string("回放列表：添加文件 ") + filename + "，得分 " + std::to_string(score));
+                } catch (const std::exception& e) {
+                    LOG_ERROR(std::string("解析回放文件 ") + filename + " 时出错：" + e.what());
+                }
             }
             file.close();
         } while (_findnext(handle, &fileInfo) == 0);
         _findclose(handle);
         std::sort(g_replayList.begin(), g_replayList.end(),
             [](const ReplayItem& a, const ReplayItem& b) { return a.filename > b.filename; });
+        LOG_DEBUG(std::string("回放列表加载完成，共 ") + std::to_string(g_replayList.size()) + " 个文件");
         return;
     }
 
@@ -108,7 +114,10 @@ static void LoadReplayList() {
                 }
                 long long score = std::stoll(numStr);
                 g_replayList.push_back({filename, timeStr, score});
-            } catch (...) {}
+                LOG_DEBUG(std::string("回放列表：添加文件 ") + filename + "，得分 " + std::to_string(score));
+            } catch (const std::exception& e) {
+                LOG_ERROR(std::string("解析回放文件 ") + filename + " 时出错：" + e.what());
+            }
         }
         file.close();
     } while (FindNextFileA(hFind, &findData));
@@ -116,12 +125,14 @@ static void LoadReplayList() {
 
     std::sort(g_replayList.begin(), g_replayList.end(),
         [](const ReplayItem& a, const ReplayItem& b) { return a.filename > b.filename; });
+    LOG_DEBUG(std::string("回放列表加载完成，共 ") + std::to_string(g_replayList.size()) + " 个文件");
 }
 
 void ReplayList_Init() {
     LoadReplayList();
     g_selectedIndex = 0;
     g_pageOffset = 0;
+    LOG_DEBUG("回放列表视图初始化");
 }
 
 void ReplayList_Draw() {
@@ -140,9 +151,8 @@ void ReplayList_Draw() {
     SetConsoleCursorPosition(hBack, { (SHORT)(centerX - tw/2), (SHORT)startY });
     WriteConsoleW(hBack, title, wcslen(title), &written, NULL);
 
-    // 页码信息
-    int totalPages = (g_replayList.size() + PAGE_SIZE - 1) / PAGE_SIZE;
-    int currentPage = (g_pageOffset / PAGE_SIZE) + 1;
+    int totalPages = (g_replayList.size() + g_config.REPLAY_PAGE_SIZE - 1) / g_config.REPLAY_PAGE_SIZE;
+    int currentPage = (g_pageOffset / g_config.REPLAY_PAGE_SIZE) + 1;
     wchar_t pageInfo[64];
     swprintf(pageInfo, 64, L"第 %d / %d 页", currentPage, totalPages);
     int pageLen = wcslen(pageInfo);
@@ -158,7 +168,7 @@ void ReplayList_Draw() {
         WriteConsoleW(hBack, emptyMsg, emLen, &written, NULL);
     } else {
         int start = g_pageOffset;
-        int end = std::min((int)g_replayList.size(), start + PAGE_SIZE);
+        int end = std::min((int)g_replayList.size(), start + g_config.REPLAY_PAGE_SIZE);
         for (int i = start; i < end; ++i) {
             const auto& item = g_replayList[i];
             wchar_t line[256];
@@ -185,7 +195,7 @@ void ReplayList_Draw() {
 
     const wchar_t* hint = g_replayList.empty() ? L"ESC 返回主菜单" : L"↑↓选择  PageUp/PageDown翻页  Enter回放  ESC返回";
     int hv = VisualWidth(hint, wcslen(hint));
-    int hintY = startY + 3 + std::min(PAGE_SIZE, (int)g_replayList.size() - g_pageOffset) + 1;
+    int hintY = startY + 3 + std::min(g_config.REPLAY_PAGE_SIZE, (int)g_replayList.size() - g_pageOffset) + 1;
     SetConsoleCursorPosition(hBack, { (SHORT)(centerX - hv/2), (SHORT)hintY });
     WriteConsoleW(hBack, hint, wcslen(hint), &written, NULL);
 
@@ -197,6 +207,7 @@ void ReplayList_HandleInput() {
     if (!IsConsoleForeground()) return;
 
     if (GetAsyncKeyState(g_config.KEY_CANCEL) & 0x8000) {
+        LOG_INFO("回放列表：ESC返回主菜单");
         g_state.gameMode = GameState::MENU;
         Sleep(150);
         return;
@@ -204,12 +215,11 @@ void ReplayList_HandleInput() {
 
     if (g_replayList.empty()) return;
 
-    // 上下键
     if (GetAsyncKeyState(g_config.KEY_NAV_UP) & 0x8000) {
         if (g_selectedIndex > 0) {
             g_selectedIndex--;
             if (g_selectedIndex < g_pageOffset) {
-                g_pageOffset -= PAGE_SIZE;
+                g_pageOffset -= g_config.REPLAY_PAGE_SIZE;
                 if (g_pageOffset < 0) g_pageOffset = 0;
             }
         }
@@ -219,10 +229,10 @@ void ReplayList_HandleInput() {
     if (GetAsyncKeyState(g_config.KEY_NAV_DOWN) & 0x8000) {
         if (g_selectedIndex < (int)g_replayList.size() - 1) {
             g_selectedIndex++;
-            if (g_selectedIndex >= g_pageOffset + PAGE_SIZE) {
-                g_pageOffset += PAGE_SIZE;
+            if (g_selectedIndex >= g_pageOffset + g_config.REPLAY_PAGE_SIZE) {
+                g_pageOffset += g_config.REPLAY_PAGE_SIZE;
                 if (g_pageOffset >= (int)g_replayList.size()) {
-                    g_pageOffset = (int)g_replayList.size() - PAGE_SIZE;
+                    g_pageOffset = (int)g_replayList.size() - g_config.REPLAY_PAGE_SIZE;
                     if (g_pageOffset < 0) g_pageOffset = 0;
                 }
             }
@@ -231,10 +241,9 @@ void ReplayList_HandleInput() {
         return;
     }
 
-    // PageUp / PageDown
     if (GetAsyncKeyState(VK_PRIOR) & 0x8000) {
         if (g_pageOffset > 0) {
-            g_pageOffset -= PAGE_SIZE;
+            g_pageOffset -= g_config.REPLAY_PAGE_SIZE;
             if (g_pageOffset < 0) g_pageOffset = 0;
             g_selectedIndex = g_pageOffset;
         }
@@ -242,10 +251,10 @@ void ReplayList_HandleInput() {
         return;
     }
     if (GetAsyncKeyState(VK_NEXT) & 0x8000) {
-        int maxOffset = (int)g_replayList.size() - PAGE_SIZE;
+        int maxOffset = (int)g_replayList.size() - g_config.REPLAY_PAGE_SIZE;
         if (maxOffset < 0) maxOffset = 0;
         if (g_pageOffset < maxOffset) {
-            g_pageOffset += PAGE_SIZE;
+            g_pageOffset += g_config.REPLAY_PAGE_SIZE;
             if (g_pageOffset > maxOffset) g_pageOffset = maxOffset;
             g_selectedIndex = g_pageOffset;
         }
@@ -253,18 +262,20 @@ void ReplayList_HandleInput() {
         return;
     }
 
-    // 确认回放
     if (GetAsyncKeyState(g_config.KEY_CONFIRM) & 0x8000) {
         if (g_selectedIndex < (int)g_replayList.size()) {
             const auto& item = g_replayList[g_selectedIndex];
+            LOG_INFO(std::string("回放列表：选择文件 ") + item.filename + " 开始回放");
             LoadReplayFile(item.filename);
             if (!g_state.replayFrames.empty()) {
-                g_state.replaySource = GameState::REPLAY_LIST;   // 设置来源
+                g_state.replaySource = GameState::REPLAY_LIST;
                 Replay_Init();
                 g_state.gameMode = GameState::REPLAY;
                 g_state.replayIndex = 0;
                 g_state.isReplaying = true;
                 QueryPerformanceCounter(&g_state.lastReplayTime);
+            } else {
+                LOG_WARN("回放列表：加载回放文件失败或数据为空");
             }
         }
         Sleep(150);

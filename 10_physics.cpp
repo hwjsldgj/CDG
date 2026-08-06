@@ -1,6 +1,7 @@
 #include "10_physics.h"
 #include "01_config.h"
 #include "03_game_state.h"
+#include "16_logger.h"
 #include <cstdlib>
 #include <windows.h>
 
@@ -28,9 +29,9 @@ void Update() {
             if (g_state.speedMultiplier < 1.0) g_state.speedMultiplier = 1.0;
         }
         g_state.nextBoostTime += g_config.BOOST_INTERVAL;
+        LOG_DEBUG(std::string("速度倍增触发，倍率：") + std::to_string(g_state.speedMultiplier) + "，当前速度：" + std::to_string(currentSpeed * g_state.speedMultiplier));
     }
 
-    // 跳跃物理
     if (g_state.isJumping) {
         if (g_state.dinoVy < 0) {
             if (g_config.ENABLE_HOLD_JUMP && g_state.spacePressed) {
@@ -58,7 +59,6 @@ void Update() {
         }
     }
 
-    // 障碍物移动与生成
     if (g_config.ENABLE_OBSTACLES) {
         for (double& x : g_state.platforms)
             x -= currentSpeed;
@@ -91,7 +91,6 @@ void Update() {
         }
     }
 
-    // 碰撞检测
     if (g_config.ENABLE_COLLISION && g_config.ENABLE_OBSTACLES) {
         double dinoLeft = g_config.DINO_X;
         double dinoRight = g_config.DINO_X + 1.0;
@@ -106,6 +105,7 @@ void Update() {
 
             if (dinoLeft < platRight && dinoRight > platLeft &&
                 dinoTop < platBottom && dinoBottom > platTop) {
+                LOG_INFO("碰撞检测：游戏结束");
                 g_state.gameOver = true;
                 UpdateHighScore();
                 break;
@@ -113,11 +113,10 @@ void Update() {
         }
     }
 
-
     static int frameCounter = 0;
     frameCounter++;
     if (g_state.isRecording && !g_state.gameOver && (frameCounter % 2 == 0)) {
-       GameState::RecordFrame frame;
+        GameState::RecordFrame frame;
         frame.timestamp = g_state.currentTime;
         frame.dinoY = g_state.dinoY;
         frame.platforms = g_state.platforms;

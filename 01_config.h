@@ -44,7 +44,7 @@ struct GameConfig {
     double PHYSICS_DT;
     double TARGET_FPS;
     double SCORE_INTERVAL;
-    double REPLAY_FRAME_INTERVAL;   // 回放帧间隔（秒）
+    double REPLAY_FRAME_INTERVAL;
 
     // 跳跃钳位
     double JUMP_TOP_CLAMP;
@@ -57,6 +57,11 @@ struct GameConfig {
     double MAX_GAP_GROWTH_INTERVAL;
     double MAX_GAP_GROWTH_STEP;
     double MAX_GAP_MULTIPLIER_MAX;
+
+    // UI 配置
+    int HISTORY_PAGE_SIZE;
+    int REPLAY_PAGE_SIZE;
+    int MENU_START_Y_OFFSET;
 
     // 键位（虚拟键码）
     int KEY_JUMP;

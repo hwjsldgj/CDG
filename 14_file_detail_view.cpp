@@ -5,6 +5,7 @@
 #include "11_utils.h"
 #include "09_persist.h"
 #include "13_replay_view.h"
+#include "16_logger.h"
 #include <windows.h>
 #include <fstream>
 #include <sstream>
@@ -27,6 +28,7 @@ static size_t g_detailObstacleMax = 0;
 static double g_detailObstacleAvg = 0.0;
 
 void FileDetail_Init(const std::string& filename) {
+    LOG_INFO(std::string("文件详情初始化：") + filename);
     g_detailFilename = filename;
     g_detailScore = 0;
     g_detailFrameCount = 0;
@@ -41,7 +43,11 @@ void FileDetail_Init(const std::string& filename) {
     g_detailObstacleAvg = 0.0;
 
     std::ifstream file("data/" + filename);
-    if (!file.is_open()) return;
+    if (!file.is_open()) {
+        LOG_WARN(std::string("文件详情：无法打开文件 data/") + filename);
+        return;
+    }
+    LOG_DEBUG("文件详情：成功打开文件");
 
     std::string timeStr, scoreLine, sep;
     std::getline(file, timeStr);
@@ -55,6 +61,7 @@ void FileDetail_Init(const std::string& filename) {
     trim(timeStr);
     trim(scoreLine);
     g_detailTime = timeStr;
+    LOG_DEBUG(std::string("文件详情：时间 ") + timeStr);
 
     std::wstring wscoreLine = Utf8ToWide(scoreLine);
     size_t pos = wscoreLine.find(L"得分：");
@@ -71,7 +78,12 @@ void FileDetail_Init(const std::string& filename) {
                 }
             }
             g_detailScore = std::stoll(numStr);
-        } catch (...) {}
+            LOG_DEBUG(std::string("文件详情：得分 ") + std::to_string(g_detailScore));
+        } catch (const std::exception& e) {
+            LOG_ERROR(std::string("文件详情：解析得分失败，异常：") + e.what());
+        }
+    } else {
+        LOG_WARN("文件详情：未找到得分行");
     }
 
     // 统计帧数据
@@ -96,13 +108,11 @@ void FileDetail_Init(const std::string& filename) {
         lastTime = t;
         g_detailFrameCount++;
 
-        // 统计恐龙Y
         if (dinoY < g_detailDinoYMin) g_detailDinoYMin = dinoY;
         if (dinoY > g_detailDinoYMax) g_detailDinoYMax = dinoY;
         sumDinoY += dinoY;
         validFrames++;
 
-        // 统计障碍物数量
         size_t obstacleCount = 0;
         double x;
         while (iss >> x) {
@@ -123,12 +133,14 @@ void FileDetail_Init(const std::string& filename) {
         g_detailObstacleMin = (minObstacles == std::numeric_limits<size_t>::max()) ? 0 : minObstacles;
         g_detailObstacleMax = maxObstacles;
         g_detailObstacleAvg = (double)totalObstacles / g_detailFrameCount;
+        LOG_DEBUG(std::string("文件详情：帧数 ") + std::to_string(g_detailFrameCount) + 
+                  "，时长 " + std::to_string(g_detailDuration) + 
+                  " 秒，帧率 " + std::to_string(g_detailFps) + " fps");
     } else {
-        g_detailObstacleMin = 0;
-        g_detailObstacleMax = 0;
-        g_detailObstacleAvg = 0.0;
+        LOG_WARN("文件详情：未读取到有效帧数据");
     }
     file.close();
+    LOG_INFO("文件详情初始化完成");
 }
 
 void FileDetail_Draw() {
@@ -204,19 +216,23 @@ void FileDetail_HandleInput() {
     if (!IsConsoleForeground()) return;
 
     if (GetAsyncKeyState(g_config.KEY_CONFIRM) & 0x8000) {
+        LOG_INFO("文件详情：开始回放");
         LoadReplayFile(g_detailFilename);
         if (!g_state.replayFrames.empty()) {
-            g_state.replaySource = GameState::HISTORY_PAGE;   // 设置来源
+            g_state.replaySource = GameState::HISTORY_PAGE;
             Replay_Init();
             g_state.gameMode = GameState::REPLAY;
             g_state.replayIndex = 0;
             g_state.isReplaying = true;
             QueryPerformanceCounter(&g_state.lastReplayTime);
+        } else {
+            LOG_WARN("文件详情：回放数据为空，无法开始");
         }
         Sleep(150);
         return;
     }
     if (GetAsyncKeyState(g_config.KEY_CANCEL) & 0x8000) {
+        LOG_DEBUG("文件详情：返回历史记录");
         g_state.gameMode = GameState::HISTORY_PAGE;
         Sleep(150);
         return;

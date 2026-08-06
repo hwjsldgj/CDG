@@ -3,6 +3,7 @@
 #include "03_game_state.h"
 #include "02_console.h"
 #include "11_utils.h"
+#include "16_logger.h"
 #include <windows.h>
 #include <algorithm>
 #include <deque>
@@ -14,18 +15,23 @@ static double g_replaySpeed = 1.0;
 static double g_replayAccumulator = 0.0;
 
 void Replay_Init() {
+    LOG_INFO("回放初始化");
     g_replayPaused = false;
     g_replaySpeed = 1.0;
     g_replayAccumulator = 0.0;
     g_state.replayIndex = 0;
     g_state.isReplaying = false;
     QueryPerformanceCounter(&g_state.lastReplayTime);
+    LOG_DEBUG(std::string("回放帧数：") + std::to_string(g_state.replayFrames.size()));
 }
 
 void Replay_Update() {
     if (!g_state.isReplaying || g_state.replayFrames.empty()) {
+        if (!g_state.replayFrames.empty()) {
+            LOG_INFO("回放结束，返回来源界面");
+        }
         g_state.isReplaying = false;
-        g_state.gameMode = g_state.replaySource;   // 返回来源
+        g_state.gameMode = g_state.replaySource;
         return;
     }
 
@@ -35,7 +41,10 @@ void Replay_Update() {
     QueryPerformanceCounter(&now);
     double delta = (double)(now.QuadPart - g_state.lastReplayTime.QuadPart) / (double)g_state.freq.QuadPart;
     g_state.lastReplayTime = now;
-    if (delta > 0.03) delta = 0.03;
+    if (delta > 0.03) {
+        LOG_WARN(std::string("回放检测到大跳帧：") + std::to_string(delta) + " 秒，截断至 0.03 秒");
+        delta = 0.03;
+    }
 
     g_replayAccumulator += delta * g_replaySpeed;
 
@@ -43,14 +52,19 @@ void Replay_Update() {
         g_replayAccumulator -= g_config.REPLAY_FRAME_INTERVAL;
         g_state.replayIndex++;
         if (g_state.replayIndex >= g_state.replayFrames.size()) {
+            LOG_INFO("回放播放完毕，帧数：" + std::to_string(g_state.replayFrames.size()));
             g_state.isReplaying = false;
-            g_state.gameMode = g_state.replaySource;   // 返回来源
+            g_state.gameMode = g_state.replaySource;
             return;
         }
         const auto& frame = g_state.replayFrames[g_state.replayIndex];
         g_state.dinoY = frame.dinoY;
         g_state.platforms.assign(frame.platforms.begin(), frame.platforms.end());
         g_state.currentTime = frame.timestamp;
+        // 每30帧记录一次进度调试
+        if (g_state.replayIndex % 30 == 0) {
+            LOG_DEBUG(std::string("回放进度：") + std::to_string(g_state.replayIndex) + "/" + std::to_string(g_state.replayFrames.size()));
+        }
     }
 }
 
@@ -141,8 +155,9 @@ void Replay_HandleInput() {
     if (!IsConsoleForeground()) return;
 
     if (GetAsyncKeyState(g_config.KEY_CANCEL) & 0x8000) {
+        LOG_INFO("回放：ESC 退出回放");
         g_state.isReplaying = false;
-        g_state.gameMode = g_state.replaySource;   // 返回来源
+        g_state.gameMode = g_state.replaySource;
         g_replayPaused = false;
         g_replaySpeed = 1.0;
         g_replayAccumulator = 0.0;
@@ -152,6 +167,7 @@ void Replay_HandleInput() {
 
     if (GetAsyncKeyState(VK_SPACE) & 0x8000) {
         g_replayPaused = !g_replayPaused;
+        LOG_INFO(std::string("回放：") + (g_replayPaused ? "暂停" : "继续"));
         Sleep(150);
         return;
     }
@@ -159,6 +175,7 @@ void Replay_HandleInput() {
     if (GetAsyncKeyState(VK_RIGHT) & 0x8000) {
         if (g_replaySpeed < 4.0) {
             g_replaySpeed = std::min(4.0, g_replaySpeed + 0.5);
+            LOG_DEBUG(std::string("回放速度加快至 ") + std::to_string(g_replaySpeed) + "x");
         }
         Sleep(150);
         return;
@@ -167,6 +184,7 @@ void Replay_HandleInput() {
     if (GetAsyncKeyState(VK_LEFT) & 0x8000) {
         if (g_replaySpeed > 0.5) {
             g_replaySpeed = std::max(0.5, g_replaySpeed - 0.5);
+            LOG_DEBUG(std::string("回放速度减慢至 ") + std::to_string(g_replaySpeed) + "x");
         }
         Sleep(150);
         return;
@@ -181,6 +199,7 @@ void Replay_HandleInput() {
                 g_state.platforms.assign(frame.platforms.begin(), frame.platforms.end());
                 g_state.currentTime = frame.timestamp;
                 g_replayAccumulator = frame.timestamp;
+                LOG_DEBUG("回放单帧前进");
             }
             Sleep(150);
             return;
@@ -193,6 +212,7 @@ void Replay_HandleInput() {
                 g_state.platforms.assign(frame.platforms.begin(), frame.platforms.end());
                 g_state.currentTime = frame.timestamp;
                 g_replayAccumulator = frame.timestamp;
+                LOG_DEBUG("回放单帧后退");
             }
             Sleep(150);
             return;

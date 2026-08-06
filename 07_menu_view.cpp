@@ -3,6 +3,7 @@
 #include "03_game_state.h"
 #include "02_console.h"
 #include "11_utils.h"
+#include "16_logger.h"
 #include <windows.h>
 #include <vector>
 #include <string>
@@ -54,17 +55,21 @@ static void ExecuteMenuAction(int idx) {
     if (idx < 0 || idx >= (int)g_menuItems.size()) return;
     const std::string& action = g_menuItems[idx].action;
     if (action == "start_game") {
+        LOG_INFO("主菜单：选择开始游戏");
         g_state.gameMode = GameState::PLAYING;
         ResetGame();
     } else if (action == "show_highscore") {
+        LOG_INFO("主菜单：进入最高分页面");
         g_state.gameMode = GameState::HIGHSCORE_PAGE;
     } else if (action == "show_history") {
+        LOG_INFO("主菜单：进入历史记录页面");
         g_state.gameMode = GameState::HISTORY_PAGE;
-    } else if (action == "exit") {
-        g_exitConfirm = true;
-    }
-    else if (action == "show_replay") {
+    } else if (action == "show_replay") {
+        LOG_INFO("主菜单：进入回放选择页面");
         g_state.gameMode = GameState::REPLAY_LIST;
+    } else if (action == "exit") {
+        LOG_INFO("主菜单：触发退出确认");
+        g_exitConfirm = true;
     }
 }
 
@@ -72,6 +77,7 @@ void Menu_Init() {
     g_menuItems = g_config.menuItems;
     g_selectedIndex = 0;
     g_exitConfirm = false;
+    LOG_DEBUG(std::string("主菜单初始化，共 ") + std::to_string(g_menuItems.size()) + " 项");
 }
 
 void Menu_ResetExitConfirm() {
@@ -95,7 +101,7 @@ void Menu_Draw() {
     std::wstring title = Utf8ToWide(g_config.menuTitle);
     std::wstring subtitle = Utf8ToWide(g_config.menuSubtitle);
     int centerX = g_config.SCREEN_WIDTH / 2;
-    int startY = g_config.SCREEN_HEIGHT / 2 - 8;   // 上移4行
+    int startY = g_config.SCREEN_HEIGHT / 2 + g_config.MENU_START_Y_OFFSET;
 
     int tw = VisualWidth(title);
     SetConsoleCursorPosition(hBack, { (SHORT)(centerX - tw/2), (SHORT)startY });
@@ -142,12 +148,14 @@ void Menu_HandleInput() {
 
     if (g_exitConfirm) {
         if (GetAsyncKeyState(g_config.KEY_EXIT_CONFIRM) & 0x8000) {
+            LOG_INFO("退出确认：选择是，程序退出");
             CloseHandle(g_state.hBuffer[0]);
             CloseHandle(g_state.hBuffer[1]);
             timeEndPeriod(1);
             exit(0);
         }
         if (GetAsyncKeyState(g_config.KEY_EXIT_DENY) & 0x8000 || GetAsyncKeyState(g_config.KEY_CANCEL) & 0x8000) {
+            LOG_DEBUG("退出确认：选择否，取消退出");
             g_exitConfirm = false;
             Sleep(150);
         }
@@ -163,10 +171,12 @@ void Menu_HandleInput() {
         if (num == 0) {
             int last = (int)g_menuItems.size() - 1;
             if (last >= 0 && g_menuItems[last].action == "exit") {
+                LOG_DEBUG("数字键0：触发退出确认");
                 g_exitConfirm = true;
             }
         } else if (num >= 1 && num <= (int)g_menuItems.size()) {
             int idx = num - 1;
+            LOG_DEBUG(std::string("数字键") + std::to_string(num) + "：选择菜单项 " + g_menuItems[idx].label);
             ExecuteMenuAction(idx);
         }
         Sleep(150);
@@ -186,11 +196,13 @@ void Menu_HandleInput() {
         return;
     }
     if (GetAsyncKeyState(g_config.KEY_CONFIRM) & 0x8000) {
+        LOG_DEBUG("回车确认：选择菜单项 " + g_menuItems[g_selectedIndex].label);
         ExecuteMenuAction(g_selectedIndex);
         Sleep(150);
         return;
     }
     if (GetAsyncKeyState(g_config.KEY_CANCEL) & 0x8000) {
+        LOG_DEBUG("ESC键：触发退出确认");
         g_exitConfirm = true;
         Sleep(150);
     }

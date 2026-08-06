@@ -1,6 +1,7 @@
 #include "02_console.h"
 #include "01_config.h"
 #include "03_game_state.h"
+#include "16_logger.h"
 #include <iostream>
 #include <string>
 #include <cstdlib>
@@ -29,6 +30,7 @@ bool IsConsoleForeground() {
 }
 
 void InitConsole() {
+    LOG_INFO("开始初始化控制台");
     SetConsoleOutputCP(65001);
     timeBeginPeriod(1);
 
@@ -47,9 +49,11 @@ void InitConsole() {
     g_state.hBuffer[1] = CreateConsoleScreenBuffer(GENERIC_READ | GENERIC_WRITE, 0, NULL,
                                                     CONSOLE_TEXTMODE_BUFFER, NULL);
     if (g_state.hBuffer[0] == INVALID_HANDLE_VALUE || g_state.hBuffer[1] == INVALID_HANDLE_VALUE) {
+        LOG_ERROR("创建控制台缓冲区失败");
         std::cerr << "创建控制台缓冲区失败！" << std::endl;
         exit(1);
     }
+    LOG_DEBUG("控制台缓冲区创建成功");
 
     ResetConsoleWindow(g_state.hBuffer[0]);
     ResetConsoleWindow(g_state.hBuffer[1]);
@@ -71,8 +75,11 @@ void InitConsole() {
         g_state.screen = new char*[g_config.SCREEN_HEIGHT];
         for (int i = 0; i < g_config.SCREEN_HEIGHT; ++i)
             g_state.screen[i] = new char[g_config.SCREEN_WIDTH];
+        LOG_DEBUG("屏幕缓冲区分配成功，大小 " + std::to_string(g_config.SCREEN_WIDTH) + "x" + std::to_string(g_config.SCREEN_HEIGHT));
     } catch (std::bad_alloc&) {
+        LOG_ERROR("内存分配失败");
         std::cerr << "内存分配失败！" << std::endl;
         exit(1);
     }
+    LOG_INFO("控制台初始化完成");
 }

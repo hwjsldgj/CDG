@@ -3,12 +3,13 @@
 #include "03_game_state.h"
 #include "02_console.h"
 #include "11_utils.h"
+#include "16_logger.h"
 #include <windows.h>
 #include <string>
 #include <ctime>
 
 void HighScore_Init() {
-    // 无需初始化
+    LOG_DEBUG("最高分页面初始化");
 }
 
 void HighScore_Draw() {
@@ -61,6 +62,7 @@ void HighScore_HandleInput() {
         GetAsyncKeyState(g_config.KEY_CONFIRM) & 0x8000 ||
         GetAsyncKeyState(g_config.KEY_JUMP) & 0x8000 ||
         GetAsyncKeyState(VK_SPACE) & 0x8000) {
+        LOG_DEBUG("最高分页面：返回主菜单");
         g_state.gameMode = GameState::MENU;
         Sleep(150);
     }

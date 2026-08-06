@@ -4,11 +4,13 @@
 #include "02_console.h"
 #include "08_pause_view.h"
 #include "11_utils.h"
+#include "16_logger.h"
 #include <windows.h>
 #include <cstring>
 #include <cstdio>
 
 void Game_Init() {
+    LOG_DEBUG("游戏视图初始化");
     // 无需额外初始化
 }
 
@@ -82,14 +84,16 @@ void Game_HandleInput() {
 
     bool isJumpKeyDown = (GetAsyncKeyState(g_config.KEY_JUMP) & 0x8000) != 0;
 
-    // 暂停键（独立检测）
+    // 暂停键
     if (GetAsyncKeyState(g_config.KEY_PAUSE) & 0x8000) {
+        LOG_INFO("暂停键按下，进入暂停");
         g_state.gameMode = GameState::PAUSED;
         Pause_Init();
         Sleep(150);
         return;
     }
     if (GetAsyncKeyState(g_config.KEY_CANCEL) & 0x8000) {
+        LOG_INFO("取消键按下，进入暂停");
         g_state.gameMode = GameState::PAUSED;
         Pause_Init();
         Sleep(150);
@@ -100,6 +104,7 @@ void Game_HandleInput() {
     if (!g_state.isJumping && g_state.dinoY >= g_config.GROUND_Y && isJumpKeyDown) {
         g_state.dinoVy = g_config.JUMP_VEL_MAX;
         g_state.isJumping = true;
+        LOG_DEBUG("触发跳跃，初速度：" + std::to_string(g_config.JUMP_VEL_MAX));
     }
     g_state.spacePressed = isJumpKeyDown;
 }

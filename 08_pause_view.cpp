@@ -4,6 +4,7 @@
 #include "02_console.h"
 #include "11_utils.h"
 #include "07_menu_view.h"
+#include "16_logger.h"
 #include <windows.h>
 #include <vector>
 #include <string>
@@ -16,19 +17,23 @@ static void ExecutePauseAction(int idx) {
     if (idx < 0 || idx >= (int)g_pauseItems.size()) return;
     const std::string& action = g_pauseItems[idx].action;
     if (action == "resume") {
+        LOG_INFO("暂停菜单：继续游戏");
         g_state.gameMode = GameState::PLAYING;
     } else if (action == "restart") {
+        LOG_INFO("暂停菜单：重新开始");
         ResetGame();
         g_state.gameMode = GameState::PLAYING;
     } else if (action == "back_to_menu") {
+        LOG_INFO("暂停菜单：返回主菜单");
         g_state.gameMode = GameState::MENU;
-        Menu_ResetExitConfirm(); // 需要声明在 menu_view.h 中
+        Menu_ResetExitConfirm();
     }
 }
 
 void Pause_Init() {
     g_pauseItems = g_config.pauseItems;
     g_selectedIndex = 0;
+    LOG_DEBUG(std::string("暂停菜单初始化，共 ") + std::to_string(g_pauseItems.size()) + " 项");
 }
 
 void Pause_Draw() {
@@ -83,7 +88,6 @@ void Pause_Draw() {
 void Pause_HandleInput() {
     if (!IsConsoleForeground()) return;
 
-    // 数字键
     int num = -1;
     for (int i = 0; i <= 9; ++i) {
         if (GetAsyncKeyState('0' + i) & 0x8000) { num = i; break; }
@@ -92,6 +96,7 @@ void Pause_HandleInput() {
     if (num != -1) {
         if (num >= 1 && num <= (int)g_pauseItems.size()) {
             int idx = num - 1;
+            LOG_DEBUG(std::string("暂停菜单数字键") + std::to_string(num) + "：选择 " + g_pauseItems[idx].label);
             ExecutePauseAction(idx);
         }
         Sleep(150);
@@ -111,11 +116,13 @@ void Pause_HandleInput() {
         return;
     }
     if (GetAsyncKeyState(g_config.KEY_CONFIRM) & 0x8000) {
+        LOG_DEBUG("暂停菜单回车确认：选择 " + g_pauseItems[g_selectedIndex].label);
         ExecutePauseAction(g_selectedIndex);
         Sleep(150);
         return;
     }
     if (GetAsyncKeyState(g_config.KEY_CANCEL) & 0x8000 || GetAsyncKeyState(g_config.KEY_PAUSE) & 0x8000) {
+        LOG_DEBUG("暂停菜单取消/暂停键：继续游戏");
         g_state.gameMode = GameState::PLAYING;
         Sleep(150);
     }
