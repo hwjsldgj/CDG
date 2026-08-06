@@ -13,4 +13,6 @@ int VisualWidth(const std::wstring& str);
 
 void Trim(std::string& s);
 
+void LogKeyPresses();   // 新增：记录所有按键按下事件
+
 #endif

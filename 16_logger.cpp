@@ -32,7 +32,9 @@ void Logger::SetOutputFile(const std::string& filename) {
     std::lock_guard<std::mutex> lock(m_mutex);
     if (m_initialized) {
         m_file.close();
+        m_initialized = false;
     }
+
     // 确保目录存在
     size_t pos = filename.find_last_of("/\\");
     if (pos != std::string::npos) {
@@ -41,15 +43,19 @@ void Logger::SetOutputFile(const std::string& filename) {
         if (stat(dir.c_str(), &st) != 0) {
             if (_mkdir(dir.c_str()) != 0) {
                 std::cerr << "创建日志目录失败：" << dir << std::endl;
+                m_initialized = false;
+                return;
             }
         }
     }
+
     m_filename = filename;
     m_file.open(m_filename, std::ios::out | std::ios::app);
     if (!m_file.is_open()) {
         std::cerr << "无法打开日志文件：" << m_filename << std::endl;
-        // 降级到当前目录
-        m_file.open("game.log", std::ios::out | std::ios::app);
+        // 不再降级到 game.log，直接标记未初始化
+        m_initialized = false;
+        return;
     }
     m_initialized = true;
     m_file << "[日志] 日志记录开始。" << std::endl;
@@ -57,8 +63,9 @@ void Logger::SetOutputFile(const std::string& filename) {
 
 void Logger::Log(LogLevel level, const std::string& message) {
     std::lock_guard<std::mutex> lock(m_mutex);
+    // 如果未初始化，不再自动降级，直接返回（避免创建 game.log）
     if (!m_initialized) {
-        SetOutputFile("game.log");
+        return;
     }
     if (level < m_level) return;
     auto now = std::chrono::system_clock::now();
