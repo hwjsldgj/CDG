@@ -1,5 +1,5 @@
 // 文件已废弃
-
+/*
 #include <iostream>
 #include <conio.h>
 #include <windows.h>
@@ -204,13 +204,13 @@ void HandleMenuInput() {
     // 占位
 }
 
-void SaveHistory() { /* 占位 */ }
-void LoadHistory() { /* 占位 */ }
+void SaveHistory() { /* 占位  }
+void LoadHistory() { /* 占位  }
 void StartRecording() { g_state.isRecording = true; g_state.replayFrames.clear(); }
 void StopRecording() { g_state.isRecording = false; }
 void Playback() { g_state.isPlaying = true; g_state.playbackIndex = 0; }
 
-void ExternalSetParam(const string& key, const string& value) { /* 占位 */ }
+void ExternalSetParam(const string& key, const string& value) { /* 占位  }
 string ExternalGetStateJSON() { return "{}"; }
 
 // ======================================================================
@@ -663,3 +663,4 @@ int main() {
     timeEndPeriod(1);
     return 0;
 }
+*/
