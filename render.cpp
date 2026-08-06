@@ -225,3 +225,88 @@ void ShowGameOver() {
         Sleep(50);
     }
 }
+// 在 render.cpp 末尾添加 DrawMenu 实现
+void DrawMenu() {
+    int back = 1 - g_state.currentFront;
+    HANDLE hBack = g_state.hBuffer[back];
+
+    EnsureBufferSize(hBack);
+
+    // 清空屏幕
+    COORD topLeft = {0, 0};
+    DWORD written;
+    FillConsoleOutputCharacterW(hBack, L' ', g_config.SCREEN_WIDTH * g_config.SCREEN_HEIGHT, topLeft, &written);
+
+    // 标题
+    const wchar_t* title1 = L"=== 恐龙跑酷 ===";
+    const wchar_t* title2 = L"(Dino Run)";
+    int title1Len = wcslen(title1);
+    int title2Len = wcslen(title2);
+    // 计算视觉宽度（中文占2列，英文占1）
+    auto visualWidth = [](const wchar_t* str, int len) {
+        int w = 0;
+        for (int i = 0; i < len; ++i) {
+            if (str[i] >= 0x4E00 && str[i] <= 0x9FA5) w += 2;
+            else w += 1;
+        }
+        return w;
+    };
+    int w1 = visualWidth(title1, title1Len);
+    int w2 = visualWidth(title2, title2Len);
+
+    int centerX = g_config.SCREEN_WIDTH / 2;
+    int startY = g_config.SCREEN_HEIGHT / 2 - 5;
+
+    SetConsoleCursorPosition(hBack, { (SHORT)(centerX - w1/2), (SHORT)startY });
+    WriteConsoleW(hBack, title1, title1Len, &written, NULL);
+
+    SetConsoleCursorPosition(hBack, { (SHORT)(centerX - w2/2), (SHORT)(startY + 1) });
+    WriteConsoleW(hBack, title2, title2Len, &written, NULL);
+
+    // 菜单项（显示编号）
+    const wchar_t* items[3][2] = {
+        { L"1. 开始游戏", L"1. Start Game" },
+        { L"2. 历史记录", L"2. History" },
+        { L"0. 退出游戏", L"0. Exit" }
+    };
+    // 实际显示顺序：先显示项0（编号1），项1（编号2），最后项2（编号0）
+    int order[3] = {0, 1, 2}; // 对应 items 索引
+    // menuSelection 0->开始，1->历史，2->退出，与绘制顺序一致（因为退出在最后）
+    // 但绘制时退出在最下方，编号为0，所以 items[2] 显示为 "0. 退出游戏"
+
+    for (int i = 0; i < 3; ++i) {
+        int idx = order[i];
+        const wchar_t* text = items[idx][0]; // 中文
+        int len = wcslen(text);
+        int visW = visualWidth(text, len);
+        int x = centerX - visW / 2;
+        int y = startY + 3 + i * 2;
+
+        // 判断是否当前选中
+        bool selected = (g_state.menuSelection == idx);
+        if (selected) {
+            // 用 '>' 和 '<' 包裹
+            wchar_t buffer[64];
+            swprintf(buffer, 64, L"> %ls <", text);
+            int bufLen = wcslen(buffer);
+            int bufVis = visualWidth(buffer, bufLen);
+            x = centerX - bufVis / 2;
+            SetConsoleCursorPosition(hBack, { (SHORT)x, (SHORT)y });
+            WriteConsoleW(hBack, buffer, bufLen, &written, NULL);
+        } else {
+            SetConsoleCursorPosition(hBack, { (SHORT)x, (SHORT)y });
+            WriteConsoleW(hBack, text, len, &written, NULL);
+        }
+    }
+
+    // 操作提示
+    const wchar_t* hint = L"↑ ↓ 选择  Enter 确认  数字键 1/2/0 快速选择";
+    int hintLen = wcslen(hint);
+    int hintVis = visualWidth(hint, hintLen);
+    SetConsoleCursorPosition(hBack, { (SHORT)(centerX - hintVis/2), (SHORT)(startY + 3 + 3*2 + 1) });
+    WriteConsoleW(hBack, hint, hintLen, &written, NULL);
+
+    // 切换缓冲区
+    SetConsoleActiveScreenBuffer(hBack);
+    g_state.currentFront = back;
+}

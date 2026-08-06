@@ -29,9 +29,12 @@ struct GameState {
     double speedMultiplier;
     double nextBoostTime;
 
-    // ===== 新增：用于物理时间追踪（解决重置后速度倍增不归零） =====
-    double currentTime;           // 游戏运行总时间（秒）
-    LARGE_INTEGER lastBoostTime;  // 上次物理时间采样点
+    // 物理时间追踪
+    double currentTime;
+    LARGE_INTEGER lastBoostTime;
+
+    // 菜单
+    int menuSelection;            // 0=开始游戏, 1=历史记录, 2=退出（但退出显示为0）
 
     // 历史记录
     struct HistoryEntry {
