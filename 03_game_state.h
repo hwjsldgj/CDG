@@ -45,6 +45,7 @@ struct GameState {
     std::vector<RecordFrame> recordFrames;
     time_t gameStartTime;
     bool isRecording;
+    double recordAccumulator;   // 新增：录制时间累加器
 
     // 回放相关
     std::vector<RecordFrame> replayFrames;

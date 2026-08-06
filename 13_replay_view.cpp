@@ -46,28 +46,26 @@ void Replay_Update() {
     QueryPerformanceCounter(&now);
     double delta = (double)(now.QuadPart - g_state.lastReplayTime.QuadPart) / (double)g_state.freq.QuadPart;
     g_state.lastReplayTime = now;
-
-    if (delta > 0.05) {
-        LOG_WARN(std::string("回放检测到大跳帧：") + std::to_string(delta) + " 秒，截断至 0.05 秒");
-        delta = 0.05;
-    }
+    if (delta > 0.05) delta = 0.05;
 
     g_replayAccumulator += delta * g_replaySpeed;
 
     while (g_replayAccumulator >= g_config.REPLAY_FRAME_INTERVAL) {
         g_replayAccumulator -= g_config.REPLAY_FRAME_INTERVAL;
-        g_state.replayIndex++;
-        if (g_state.replayIndex >= g_state.replayFrames.size()) {
-            LOG_INFO(std::string("回放播放完毕，帧数：") + std::to_string(g_state.replayIndex));
+        if (g_state.replayIndex + 1 < g_state.replayFrames.size()) {
+            g_state.replayIndex++;
+            const auto& frame = g_state.replayFrames[g_state.replayIndex];
+            g_state.dinoY = frame.dinoY;
+            g_state.platforms.assign(frame.platforms.begin(), frame.platforms.end());
+            g_state.currentTime = frame.timestamp;
+        } else {
+            // 播放完毕
             g_state.isReplaying = false;
             g_state.gameMode = g_state.replaySource;
+            LOG_INFO("回放播放完毕");
             LOG_EXIT();
             return;
         }
-        const auto& frame = g_state.replayFrames[g_state.replayIndex];
-        g_state.dinoY = frame.dinoY;
-        g_state.platforms.assign(frame.platforms.begin(), frame.platforms.end());
-        g_state.currentTime = frame.timestamp;
     }
 
     LOG_EXIT();
@@ -165,48 +163,57 @@ void Replay_HandleInput() {
         return;
     }
 
-    if (GetAsyncKeyState(g_config.KEY_CANCEL) & 0x8000) {
+    static LARGE_INTEGER lastKeyTime[256] = {0};
+    auto IsKeyTriggered = [&](int vk, int cooldownMs = 200) {
+        if (!(GetAsyncKeyState(vk) & 0x8000)) return false;
+        LARGE_INTEGER now;
+        QueryPerformanceCounter(&now);
+        double elapsed = (now.QuadPart - lastKeyTime[vk].QuadPart) / (double)g_state.freq.QuadPart * 1000.0;
+        if (elapsed >= cooldownMs) {
+            lastKeyTime[vk] = now;
+            return true;
+        }
+        return false;
+    };
+
+    if (IsKeyTriggered(g_config.KEY_CANCEL)) {
         LOG_INFO("回放按键：ESC，退出回放，返回来源界面");
         g_state.isReplaying = false;
         g_state.gameMode = g_state.replaySource;
         g_replayPaused = false;
         g_replaySpeed = 1.0;
         g_replayAccumulator = 0.0;
-        Sleep(150);
         LOG_EXIT();
         return;
     }
 
-    if (GetAsyncKeyState(VK_SPACE) & 0x8000) {
+    if (IsKeyTriggered(VK_SPACE)) {
         g_replayPaused = !g_replayPaused;
         LOG_INFO(std::string("回放按键：空格，") + (g_replayPaused ? "暂停" : "继续"));
-        Sleep(150);
         LOG_EXIT();
         return;
     }
 
-    if (GetAsyncKeyState(VK_RIGHT) & 0x8000) {
+    if (IsKeyTriggered(VK_RIGHT)) {
         if (g_replaySpeed < 4.0) {
             g_replaySpeed = std::min(4.0, g_replaySpeed + 0.5);
             LOG_INFO(std::string("回放按键：右方向键，加速到 ") + std::to_string(g_replaySpeed) + "x");
         }
-        Sleep(150);
         LOG_EXIT();
         return;
     }
 
-    if (GetAsyncKeyState(VK_LEFT) & 0x8000) {
+    if (IsKeyTriggered(VK_LEFT)) {
         if (g_replaySpeed > 0.5) {
             g_replaySpeed = std::max(0.5, g_replaySpeed - 0.5);
             LOG_INFO(std::string("回放按键：左方向键，减速到 ") + std::to_string(g_replaySpeed) + "x");
         }
-        Sleep(150);
         LOG_EXIT();
         return;
     }
 
     if (g_replayPaused) {
-        if (GetAsyncKeyState(VK_UP) & 0x8000) {
+        if (IsKeyTriggered(VK_UP)) {
             if (g_state.replayIndex + 1 < g_state.replayFrames.size()) {
                 g_state.replayIndex++;
                 const auto& frame = g_state.replayFrames[g_state.replayIndex];
@@ -215,12 +222,13 @@ void Replay_HandleInput() {
                 g_state.currentTime = frame.timestamp;
                 g_replayAccumulator = frame.timestamp;
                 LOG_INFO(std::string("回放按键：上方向键，单帧前进到 ") + std::to_string(g_state.replayIndex));
+            } else {
+                LOG_WARN("已达回放末尾，无法前进");
             }
-            Sleep(150);
             LOG_EXIT();
             return;
         }
-        if (GetAsyncKeyState(VK_DOWN) & 0x8000) {
+        if (IsKeyTriggered(VK_DOWN)) {
             if (g_state.replayIndex > 0) {
                 g_state.replayIndex--;
                 const auto& frame = g_state.replayFrames[g_state.replayIndex];
@@ -229,8 +237,9 @@ void Replay_HandleInput() {
                 g_state.currentTime = frame.timestamp;
                 g_replayAccumulator = frame.timestamp;
                 LOG_INFO(std::string("回放按键：下方向键，单帧后退到 ") + std::to_string(g_state.replayIndex));
+            } else {
+                LOG_WARN("已达回放开头，无法后退");
             }
-            Sleep(150);
             LOG_EXIT();
             return;
         }

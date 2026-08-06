@@ -4,8 +4,8 @@
 #include <sstream>
 #include <ctime>
 #include <iostream>
-#include <direct.h>   // for _mkdir on Windows
-#include <sys/stat.h> // for stat
+#include <direct.h>
+#include <sys/stat.h>
 
 Logger& Logger::Instance() {
     static Logger instance;
@@ -35,7 +35,6 @@ void Logger::SetOutputFile(const std::string& filename) {
         m_initialized = false;
     }
 
-    // 确保目录存在
     size_t pos = filename.find_last_of("/\\");
     if (pos != std::string::npos) {
         std::string dir = filename.substr(0, pos);
@@ -52,8 +51,7 @@ void Logger::SetOutputFile(const std::string& filename) {
     m_filename = filename;
     m_file.open(m_filename, std::ios::out | std::ios::app);
     if (!m_file.is_open()) {
-        std::cerr << "无法打开日志文件：" << m_filename << std::endl;
-        // 不再降级到 game.log，直接标记未初始化
+        std::cerr << "无法打开日志文件：" << m_filename << "，将使用控制台输出" << std::endl;
         m_initialized = false;
         return;
     }
@@ -63,11 +61,13 @@ void Logger::SetOutputFile(const std::string& filename) {
 
 void Logger::Log(LogLevel level, const std::string& message) {
     std::lock_guard<std::mutex> lock(m_mutex);
-    // 如果未初始化，不再自动降级，直接返回（避免创建 game.log）
+    // 如果日志文件未初始化，输出到 stderr（始终可见）
     if (!m_initialized) {
+        std::cerr << "[控制台日志] " << message << std::endl;
         return;
     }
     if (level < m_level) return;
+
     auto now = std::chrono::system_clock::now();
     auto time = std::chrono::system_clock::to_time_t(now);
     auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch()) % 1000;

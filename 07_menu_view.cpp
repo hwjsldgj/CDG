@@ -2,6 +2,7 @@
 #include "01_config.h"
 #include "03_game_state.h"
 #include "02_console.h"
+#include "09_persist.h"
 #include "11_utils.h"
 #include "16_logger.h"
 #include <windows.h>
@@ -13,10 +14,47 @@ static std::vector<MenuItem> g_menuItems;
 static int g_selectedIndex = 0;
 static bool g_exitConfirm = false;
 
+// 新增：释放所有游戏资源（用于安全退出）
+static void CleanupAndExit() {
+    LOG_INFO("正在安全退出游戏...");
+    // 保存最高分
+    SaveHighScore();
+    // 若正在录制，保存回放
+    if (g_state.isRecording && !g_state.recordFrames.empty()) {
+        g_state.isRecording = false;
+        SaveReplayFile();
+    }
+    // 刷新日志
+    Logger::Instance().Flush();
+
+    // 释放屏幕缓冲区
+    if (g_state.screen) {
+        for (int i = 0; i < g_config.SCREEN_HEIGHT; ++i)
+            delete[] g_state.screen[i];
+        delete[] g_state.screen;
+        g_state.screen = nullptr;
+    }
+    // 关闭控制台缓冲区句柄
+    for (int i = 0; i < 2; ++i) {
+        if (g_state.hBuffer[i] && g_state.hBuffer[i] != INVALID_HANDLE_VALUE) {
+            CloseHandle(g_state.hBuffer[i]);
+            g_state.hBuffer[i] = INVALID_HANDLE_VALUE;
+        }
+    }
+    timeEndPeriod(1);
+    LOG_INFO("游戏已安全退出");
+    exit(0);
+}
+
 static void DrawExitConfirm() {
     int back = 1 - g_state.currentFront;
     HANDLE hBack = g_state.hBuffer[back];
     EnsureBufferSize(hBack);
+
+    // 清空整个缓冲区，避免残留
+    COORD topLeft = {0, 0};
+    DWORD written;
+    FillConsoleOutputCharacterW(hBack, L' ', g_config.SCREEN_WIDTH * g_config.SCREEN_HEIGHT, topLeft, &written);
 
     const wchar_t* confirmMsg = L"是否退出游戏？ (Y/N)";
     int msgLen = wcslen(confirmMsg);
@@ -28,7 +66,6 @@ static void DrawExitConfirm() {
     int left = centerX - boxWidth / 2;
     int top = centerY - 1;
 
-    DWORD written;
     SetConsoleCursorPosition(hBack, { (SHORT)left, (SHORT)top });
     WriteConsoleW(hBack, L"╔", 1, &written, NULL);
     for (int i = 0; i < boxWidth - 2; ++i) WriteConsoleW(hBack, L"═", 1, &written, NULL);
@@ -148,6 +185,22 @@ void Menu_Draw() {
     g_state.currentFront = back;
 }
 
+// 全局按键冷却时间（毫秒）
+static const int KEY_COOLDOWN_MS = 200;
+static LARGE_INTEGER g_lastKeyTime[256] = {0};
+
+static bool IsKeyTriggered(int vk) {
+    if (!(GetAsyncKeyState(vk) & 0x8000)) return false;
+    LARGE_INTEGER now;
+    QueryPerformanceCounter(&now);
+    double elapsed = (now.QuadPart - g_lastKeyTime[vk].QuadPart) / (double)g_state.freq.QuadPart * 1000.0;
+    if (elapsed >= KEY_COOLDOWN_MS) {
+        g_lastKeyTime[vk] = now;
+        return true;
+    }
+    return false;
+}
+
 void Menu_HandleInput() {
     LOG_ENTRY();
 
@@ -158,71 +211,69 @@ void Menu_HandleInput() {
     }
 
     if (g_exitConfirm) {
-        if (GetAsyncKeyState(g_config.KEY_EXIT_CONFIRM) & 0x8000) {
+        if (IsKeyTriggered(g_config.KEY_EXIT_CONFIRM)) {
             LOG_INFO("退出确认：按键Y，确认退出");
-            CloseHandle(g_state.hBuffer[0]);
-            CloseHandle(g_state.hBuffer[1]);
-            timeEndPeriod(1);
-            exit(0);
+            CleanupAndExit();  // 安全退出
         }
-        if (GetAsyncKeyState(g_config.KEY_EXIT_DENY) & 0x8000 || GetAsyncKeyState(g_config.KEY_CANCEL) & 0x8000) {
+        if (IsKeyTriggered(g_config.KEY_EXIT_DENY) || IsKeyTriggered(g_config.KEY_CANCEL)) {
             LOG_INFO("退出确认：按键N或ESC，取消退出");
             g_exitConfirm = false;
-            Sleep(150);
         }
         LOG_EXIT();
         return;
     }
 
+    // 数字键快速选择（包含0）
     int num = -1;
     for (int i = 0; i <= 9; ++i) {
-        if (GetAsyncKeyState('0' + i) & 0x8000) { num = i; break; }
-        if (GetAsyncKeyState(VK_NUMPAD0 + i) & 0x8000) { num = i; break; }
+        if (IsKeyTriggered('0' + i)) { num = i; break; }
+        if (IsKeyTriggered(VK_NUMPAD0 + i)) { num = i; break; }
     }
     if (num != -1) {
         if (num == 0) {
-            int last = (int)g_menuItems.size() - 1;
-            if (last >= 0 && g_menuItems[last].action == "exit") {
-                LOG_INFO("按键：数字键0，触发退出确认");
-                g_exitConfirm = true;
+            // 查找是否有 "exit" 动作，不限定最后一项
+            for (size_t i = 0; i < g_menuItems.size(); ++i) {
+                if (g_menuItems[i].action == "exit") {
+                    LOG_INFO("按键：数字键0，触发退出确认");
+                    g_exitConfirm = true;
+                    break;
+                }
+            }
+            if (!g_exitConfirm) {
+                LOG_INFO("按键：数字键0，但未找到退出项，忽略");
             }
         } else if (num >= 1 && num <= (int)g_menuItems.size()) {
             int idx = num - 1;
             LOG_INFO(std::string("按键：数字键") + std::to_string(num) + "，选择菜单项 " + g_menuItems[idx].label);
             ExecuteMenuAction(idx);
         }
-        Sleep(150);
         LOG_EXIT();
         return;
     }
 
-    if (GetAsyncKeyState(g_config.KEY_NAV_UP) & 0x8000) {
+    if (IsKeyTriggered(g_config.KEY_NAV_UP)) {
         LOG_INFO("按键：上方向键，菜单上移");
         g_selectedIndex--;
         if (g_selectedIndex < 0) g_selectedIndex = (int)g_menuItems.size() - 1;
-        Sleep(150);
         LOG_EXIT();
         return;
     }
-    if (GetAsyncKeyState(g_config.KEY_NAV_DOWN) & 0x8000) {
+    if (IsKeyTriggered(g_config.KEY_NAV_DOWN)) {
         LOG_INFO("按键：下方向键，菜单下移");
         g_selectedIndex++;
         if (g_selectedIndex >= (int)g_menuItems.size()) g_selectedIndex = 0;
-        Sleep(150);
         LOG_EXIT();
         return;
     }
-    if (GetAsyncKeyState(g_config.KEY_CONFIRM) & 0x8000) {
+    if (IsKeyTriggered(g_config.KEY_CONFIRM)) {
         LOG_INFO("按键：回车键，确认选择菜单项 " + g_menuItems[g_selectedIndex].label);
         ExecuteMenuAction(g_selectedIndex);
-        Sleep(150);
         LOG_EXIT();
         return;
     }
-    if (GetAsyncKeyState(g_config.KEY_CANCEL) & 0x8000) {
+    if (IsKeyTriggered(g_config.KEY_CANCEL)) {
         LOG_INFO("按键：ESC键，触发退出确认");
         g_exitConfirm = true;
-        Sleep(150);
     }
 
     LOG_EXIT();

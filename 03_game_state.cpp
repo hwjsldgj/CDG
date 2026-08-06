@@ -22,6 +22,7 @@ GameState::GameState()
     , highScoreTime(0)
     , gameStartTime(0)
     , isRecording(false)
+    , recordAccumulator(0.0)      // 初始化
     , replayIndex(0)
     , isReplaying(false)
     , lastReplayTime{0}
@@ -72,6 +73,7 @@ void ResetGame() {
 
     g_state.currentTime = 0.0;
     g_state.lastBoostTime.QuadPart = 0;
+    g_state.recordAccumulator = 0.0;   // 重置累加器
 
     g_state.startTime = time(nullptr);
     g_state.gameStartTime = time(nullptr);

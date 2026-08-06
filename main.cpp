@@ -297,6 +297,7 @@ int main() {
                     if (g_state.gameOver) {
                         LOG_INFO("游戏结束，保存回放文件");
                         if (g_state.isRecording) {
+                            ForceRecordFrame();          // 强制记录最后一帧
                             g_state.isRecording = false;
                             SaveReplayFile();
                             LOG_DEBUG("回放文件已保存");

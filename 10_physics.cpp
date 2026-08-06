@@ -5,8 +5,18 @@
 #include <cstdlib>
 #include <windows.h>
 
+// 强制录制一帧（用于游戏结束前捕捉最后状态）
+void ForceRecordFrame() {
+    if (!g_state.isRecording) return;
+    GameState::RecordFrame frame;
+    frame.timestamp = g_state.currentTime;
+    frame.dinoY = g_state.dinoY;
+    frame.platforms = g_state.platforms;
+    g_state.recordFrames.push_back(frame);
+    LOG_DEBUG("强制录制最后一帧，总帧数：" + std::to_string(g_state.recordFrames.size()));
+}
+
 void Update() {
-    // 函数入口不记录，避免日志过大（每帧调用）
     double currentSpeed = g_config.BASE_SPEED;
     if (g_config.ENABLE_LINEAR_SPEED) {
         currentSpeed += g_state.score * g_config.SPEED_PER_SCORE;
@@ -14,10 +24,8 @@ void Update() {
     currentSpeed *= g_state.speedMultiplier;
     if (currentSpeed > g_config.MAX_SPEED) {
         currentSpeed = g_config.MAX_SPEED;
-        LOG_DEBUG(std::string("速度达到上限：") + std::to_string(currentSpeed));
     }
 
-    // 物理时间追踪
     LARGE_INTEGER now;
     QueryPerformanceCounter(&now);
     if (g_state.lastBoostTime.QuadPart != 0) {
@@ -35,8 +43,6 @@ void Update() {
             if (g_state.speedMultiplier < 1.0) g_state.speedMultiplier = 1.0;
         }
         g_state.nextBoostTime += g_config.BOOST_INTERVAL;
-        LOG_DEBUG(std::string("速度倍增触发，倍率=") + std::to_string(g_state.speedMultiplier) +
-                  "，当前速度=" + std::to_string(currentSpeed));
     }
 
     // 跳跃物理
@@ -132,19 +138,16 @@ void Update() {
             }
         }
     }
-
-    // 录制帧（每2帧记录一次）
-    static int frameCounter = 0;
-    frameCounter++;
-    if (g_state.isRecording && !g_state.gameOver && (frameCounter % 2 == 0)) {
-        GameState::RecordFrame frame;
-        frame.timestamp = g_state.currentTime;
-        frame.dinoY = g_state.dinoY;
-        frame.platforms = g_state.platforms;
-        g_state.recordFrames.push_back(frame);
-        // 每500帧记录一次
-        if (g_state.recordFrames.size() % 500 == 0) {
-            LOG_DEBUG(std::string("录制帧数：") + std::to_string(g_state.recordFrames.size()));
+    // ---- 录制：固定帧率，使用累积器 ----
+    if (g_state.isRecording && !g_state.gameOver) {
+        g_state.recordAccumulator += g_config.PHYSICS_DT;
+        while (g_state.recordAccumulator >= g_config.REPLAY_FRAME_INTERVAL) {
+            g_state.recordAccumulator -= g_config.REPLAY_FRAME_INTERVAL;
+            GameState::RecordFrame frame;
+            frame.timestamp = g_state.currentTime;
+            frame.dinoY = g_state.dinoY;
+            frame.platforms = g_state.platforms;
+            g_state.recordFrames.push_back(frame);
         }
     }
 }
