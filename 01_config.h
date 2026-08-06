@@ -44,6 +44,7 @@ struct GameConfig {
     double PHYSICS_DT;
     double TARGET_FPS;
     double SCORE_INTERVAL;
+    double REPLAY_FRAME_INTERVAL;   // 回放帧间隔（秒）
 
     // 跳跃钳位
     double JUMP_TOP_CLAMP;
@@ -53,7 +54,6 @@ struct GameConfig {
     double GENERATE_THRESHOLD;
     double INITIAL_PLATFORM_OFFSET;
     int MAX_PLATFORMS;
-    // 动态间距配置
     double MAX_GAP_GROWTH_INTERVAL;
     double MAX_GAP_GROWTH_STEP;
     double MAX_GAP_MULTIPLIER_MAX;

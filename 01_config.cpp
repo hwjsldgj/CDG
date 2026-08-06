@@ -31,14 +31,15 @@ GameConfig::GameConfig()
     , PHYSICS_DT(1.0/60.0)
     , TARGET_FPS(120.0)
     , SCORE_INTERVAL(0.1)
+    , REPLAY_FRAME_INTERVAL(1.0/30.0)   // 默认30fps
     , JUMP_TOP_CLAMP(4.0)
     , JUMP_BOTTOM_CLAMP(2.0)
     , GENERATE_THRESHOLD(10.0)
     , INITIAL_PLATFORM_OFFSET(5.0)
     , MAX_PLATFORMS(200)
-    , MAX_GAP_GROWTH_INTERVAL(20.0)    // 新增
-    , MAX_GAP_GROWTH_STEP(0.1)          // 新增
-    , MAX_GAP_MULTIPLIER_MAX(2.0)       // 新增
+    , MAX_GAP_GROWTH_INTERVAL(20.0)
+    , MAX_GAP_GROWTH_STEP(0.15)
+    , MAX_GAP_MULTIPLIER_MAX(2.0)
     , KEY_JUMP(32)
     , KEY_PAUSE(80)
     , KEY_RESTART(82)
@@ -103,11 +104,14 @@ void LoadConfig(const char* filename) {
 
     std::vector<MenuItem> loadedMenuItems;
     std::vector<MenuItem> loadedPauseItems;
+    std::string line, section, lastSection;
 
-    std::string line, section;
     while (std::getline(file, line)) {
         if (!line.empty() && line.front() == '[' && line.back() == ']') {
             section = line.substr(1, line.size() - 2);
+            if (section == "Menu" && section != lastSection) loadedMenuItems.clear();
+            if (section == "Pause" && section != lastSection) loadedPauseItems.clear();
+            lastSection = section;
             continue;
         }
         if (line.empty() || line[0] == '#' || line[0] == ';') continue;
@@ -152,6 +156,7 @@ void LoadConfig(const char* filename) {
             if (key == "PHYSICS_DT") g_config.PHYSICS_DT = SafeParseDouble(val, 1.0/60.0);
             else if (key == "TARGET_FPS") g_config.TARGET_FPS = SafeParseDouble(val, 120.0);
             else if (key == "SCORE_INTERVAL") g_config.SCORE_INTERVAL = SafeParseDouble(val, 0.1);
+            else if (key == "REPLAY_FRAME_INTERVAL") g_config.REPLAY_FRAME_INTERVAL = SafeParseDouble(val, 1.0/30.0);
         }
         else if (section == "JumpClamp") {
             if (key == "JUMP_TOP_CLAMP") g_config.JUMP_TOP_CLAMP = SafeParseDouble(val, 4.0);
@@ -162,7 +167,7 @@ void LoadConfig(const char* filename) {
             else if (key == "INITIAL_PLATFORM_OFFSET") g_config.INITIAL_PLATFORM_OFFSET = SafeParseDouble(val, 5.0);
             else if (key == "MAX_PLATFORMS") g_config.MAX_PLATFORMS = SafeParseInt(val, 200);
             else if (key == "MAX_GAP_GROWTH_INTERVAL") g_config.MAX_GAP_GROWTH_INTERVAL = SafeParseDouble(val, 20.0);
-            else if (key == "MAX_GAP_GROWTH_STEP") g_config.MAX_GAP_GROWTH_STEP = SafeParseDouble(val, 0.1);
+            else if (key == "MAX_GAP_GROWTH_STEP") g_config.MAX_GAP_GROWTH_STEP = SafeParseDouble(val, 0.15);
             else if (key == "MAX_GAP_MULTIPLIER_MAX") g_config.MAX_GAP_MULTIPLIER_MAX = SafeParseDouble(val, 2.0);
         }
         else if (section == "Keys") {

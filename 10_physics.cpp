@@ -30,23 +30,19 @@ void Update() {
         g_state.nextBoostTime += g_config.BOOST_INTERVAL;
     }
 
-    // 跳跃物理（恢复 ENABLE_HOLD_JUMP 逻辑）
+    // 跳跃物理
     if (g_state.isJumping) {
         if (g_state.dinoVy < 0) {
-            // 上升阶段
             if (g_config.ENABLE_HOLD_JUMP && g_state.spacePressed) {
-                // 如果按住跳跃键，判断是否到达顶部钳位
                 if (g_state.dinoY < g_config.JUMP_TOP_CLAMP) {
-                    g_state.dinoVy += g_config.GRAVITY;  // 接近顶部时减速
+                    g_state.dinoVy += g_config.GRAVITY;
                 } else {
-                    g_state.dinoVy = g_config.JUMP_VEL_MAX; // 保持最大速度
+                    g_state.dinoVy = g_config.JUMP_VEL_MAX;
                 }
             } else {
-                // 未按住或禁用长按，正常重力减速
                 g_state.dinoVy += g_config.GRAVITY;
             }
         } else {
-            // 下降阶段
             g_state.dinoVy += g_config.GRAVITY;
         }
         g_state.dinoY += g_state.dinoVy;
@@ -62,7 +58,7 @@ void Update() {
         }
     }
 
-    // 障碍物移动与生成（保留动态间距）
+    // 障碍物移动与生成
     if (g_config.ENABLE_OBSTACLES) {
         for (double& x : g_state.platforms)
             x -= currentSpeed;
@@ -115,5 +111,16 @@ void Update() {
                 break;
             }
         }
+    }
+
+
+    static int frameCounter = 0;
+    frameCounter++;
+    if (g_state.isRecording && !g_state.gameOver && (frameCounter % 2 == 0)) {
+       GameState::RecordFrame frame;
+        frame.timestamp = g_state.currentTime;
+        frame.dinoY = g_state.dinoY;
+        frame.platforms = g_state.platforms;
+        g_state.recordFrames.push_back(frame);
     }
 }

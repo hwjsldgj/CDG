@@ -7,7 +7,9 @@
 #include <windows.h>
 
 struct GameState {
-    enum GameMode { MENU, PLAYING, PAUSED, GAMEOVER, HIGHSCORE_PAGE } gameMode;
+    enum GameMode { MENU, PLAYING, PAUSED, GAMEOVER, HIGHSCORE_PAGE, HISTORY_PAGE, FILE_DETAIL, REPLAY_LIST, REPLAY };
+
+    GameMode gameMode;
 
     bool gameOver;
     long long score;
@@ -34,6 +36,23 @@ struct GameState {
     time_t startTime;
     time_t highScoreTime;
 
+    // 录制相关
+    struct RecordFrame {
+        double timestamp;
+        double dinoY;
+        std::deque<double> platforms;
+    };
+    std::vector<RecordFrame> recordFrames;
+    time_t gameStartTime;
+    bool isRecording;
+
+    // 回放相关
+    std::vector<RecordFrame> replayFrames;
+    size_t replayIndex;
+    bool isReplaying;
+    LARGE_INTEGER lastReplayTime;
+    GameMode replaySource;   // 记录回放来源
+
     // 历史记录（占位）
     struct HistoryEntry {
         time_t timestamp;
@@ -43,15 +62,14 @@ struct GameState {
     };
     std::vector<HistoryEntry> history;
 
-    // 回放（占位）
+    // 旧回放占位（保留）
     struct ReplayFrame {
         double time;
         double dinoY;
         double dinoVy;
         std::deque<double> platforms;
     };
-    std::vector<ReplayFrame> replayFrames;
-    bool isRecording;
+    std::vector<ReplayFrame> replayFramesOld;
     bool isPlaying;
     size_t playbackIndex;
 

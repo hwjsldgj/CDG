@@ -19,7 +19,12 @@ GameState::GameState()
     , currentTime(0.0)
     , startTime(0)
     , highScoreTime(0)
+    , gameStartTime(0)
     , isRecording(false)
+    , replayIndex(0)
+    , isReplaying(false)
+    , lastReplayTime{0}
+    , replaySource(MENU)    // 新增初始化
     , isPlaying(false)
     , playbackIndex(0)
 {
@@ -57,6 +62,9 @@ void ResetGame() {
     g_state.lastBoostTime.QuadPart = 0;
 
     g_state.startTime = time(nullptr);
+    g_state.gameStartTime = time(nullptr);
+    g_state.recordFrames.clear();
+    g_state.isRecording = true;
 
     QueryPerformanceCounter(&g_state.lastScoreTime);
     static LARGE_INTEGER lastTime = {0};

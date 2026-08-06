@@ -12,7 +12,6 @@ static std::vector<MenuItem> g_menuItems;
 static int g_selectedIndex = 0;
 static bool g_exitConfirm = false;
 
-// 绘制退出确认对话框（由本模块内部调用）
 static void DrawExitConfirm() {
     int back = 1 - g_state.currentFront;
     HANDLE hBack = g_state.hBuffer[back];
@@ -51,7 +50,6 @@ static void DrawExitConfirm() {
     g_state.currentFront = back;
 }
 
-// 执行菜单动作
 static void ExecuteMenuAction(int idx) {
     if (idx < 0 || idx >= (int)g_menuItems.size()) return;
     const std::string& action = g_menuItems[idx].action;
@@ -60,8 +58,13 @@ static void ExecuteMenuAction(int idx) {
         ResetGame();
     } else if (action == "show_highscore") {
         g_state.gameMode = GameState::HIGHSCORE_PAGE;
+    } else if (action == "show_history") {
+        g_state.gameMode = GameState::HISTORY_PAGE;
     } else if (action == "exit") {
         g_exitConfirm = true;
+    }
+    else if (action == "show_replay") {
+        g_state.gameMode = GameState::REPLAY_LIST;
     }
 }
 
@@ -92,7 +95,7 @@ void Menu_Draw() {
     std::wstring title = Utf8ToWide(g_config.menuTitle);
     std::wstring subtitle = Utf8ToWide(g_config.menuSubtitle);
     int centerX = g_config.SCREEN_WIDTH / 2;
-    int startY = g_config.SCREEN_HEIGHT / 2 - 4;
+    int startY = g_config.SCREEN_HEIGHT / 2 - 8;   // 上移4行
 
     int tw = VisualWidth(title);
     SetConsoleCursorPosition(hBack, { (SHORT)(centerX - tw/2), (SHORT)startY });
@@ -102,7 +105,6 @@ void Menu_Draw() {
     SetConsoleCursorPosition(hBack, { (SHORT)(centerX - sw/2), (SHORT)(startY + 1) });
     WriteConsoleW(hBack, subtitle.c_str(), subtitle.length(), &written, NULL);
 
-    // 菜单项
     for (size_t i = 0; i < g_menuItems.size(); ++i) {
         char numBuf[8];
         snprintf(numBuf, sizeof(numBuf), "%zu.", i + 1);
@@ -152,7 +154,6 @@ void Menu_HandleInput() {
         return;
     }
 
-    // 数字键
     int num = -1;
     for (int i = 0; i <= 9; ++i) {
         if (GetAsyncKeyState('0' + i) & 0x8000) { num = i; break; }
@@ -160,7 +161,6 @@ void Menu_HandleInput() {
     }
     if (num != -1) {
         if (num == 0) {
-            // 0 对应最后一项（通常是退出）
             int last = (int)g_menuItems.size() - 1;
             if (last >= 0 && g_menuItems[last].action == "exit") {
                 g_exitConfirm = true;
