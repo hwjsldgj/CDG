@@ -10,7 +10,9 @@
 #include <ctime>
 
 void GameOver_Init() {
+    LOG_ENTRY();
     LOG_DEBUG("游戏结束视图初始化");
+    LOG_EXIT();
 }
 
 void GameOver_Draw() {
@@ -54,20 +56,37 @@ void GameOver_Draw() {
 }
 
 void GameOver_HandleInput() {
-    if (!IsConsoleForeground()) return;
+    LOG_ENTRY();
+
+    if (!IsConsoleForeground()) {
+        LOG_DEBUG("控制台未在前台，忽略输入");
+        LOG_EXIT();
+        return;
+    }
 
     if (GetAsyncKeyState(g_config.KEY_RESTART) & 0x8000) {
-        LOG_INFO("游戏结束：按R重新开始");
+        LOG_INFO("游戏结束按键：R键，重新开始");
         ResetGame();
         g_state.gameMode = GameState::PLAYING;
         Sleep(150);
+        LOG_EXIT();
         return;
     }
     if (GetAsyncKeyState(g_config.KEY_CANCEL) & 0x8000) {
-        LOG_INFO("游戏结束：按ESC返回主菜单");
+        LOG_INFO("游戏结束按键：ESC键，返回主菜单");
         g_state.gameMode = GameState::MENU;
         Menu_ResetExitConfirm();
         Sleep(150);
+        LOG_EXIT();
         return;
     }
+
+    // 记录其他可能按下的键（以便调试）
+    for (int i = 0; i < 256; ++i) {
+        if (GetAsyncKeyState(i) & 0x8000) {
+            LOG_DEBUG(std::string("游戏结束画面按下了未知键：") + std::to_string(i));
+        }
+    }
+
+    LOG_EXIT();
 }

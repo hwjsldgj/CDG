@@ -19,35 +19,22 @@ static long long g_detailScore = 0;
 static size_t g_detailFrameCount = 0;
 static double g_detailDuration = 0.0;
 static double g_detailFps = 0.0;
-static double g_detailAvgInterval = 0.0;
-static double g_detailDinoYMin = 0.0;
-static double g_detailDinoYMax = 0.0;
-static double g_detailDinoYAvg = 0.0;
-static size_t g_detailObstacleMin = 0;
-static size_t g_detailObstacleMax = 0;
-static double g_detailObstacleAvg = 0.0;
 
 void FileDetail_Init(const std::string& filename) {
+    LOG_ENTRY();
     LOG_INFO(std::string("文件详情初始化：") + filename);
     g_detailFilename = filename;
     g_detailScore = 0;
     g_detailFrameCount = 0;
     g_detailDuration = 0.0;
     g_detailFps = 0.0;
-    g_detailAvgInterval = 0.0;
-    g_detailDinoYMin = std::numeric_limits<double>::max();
-    g_detailDinoYMax = -std::numeric_limits<double>::max();
-    g_detailDinoYAvg = 0.0;
-    g_detailObstacleMin = std::numeric_limits<size_t>::max();
-    g_detailObstacleMax = 0;
-    g_detailObstacleAvg = 0.0;
 
     std::ifstream file("data/" + filename);
     if (!file.is_open()) {
-        LOG_WARN(std::string("文件详情：无法打开文件 data/") + filename);
+        LOG_ERROR(std::string("无法打开文件：") + filename);
+        LOG_EXIT();
         return;
     }
-    LOG_DEBUG("文件详情：成功打开文件");
 
     std::string timeStr, scoreLine, sep;
     std::getline(file, timeStr);
@@ -61,7 +48,6 @@ void FileDetail_Init(const std::string& filename) {
     trim(timeStr);
     trim(scoreLine);
     g_detailTime = timeStr;
-    LOG_DEBUG(std::string("文件详情：时间 ") + timeStr);
 
     std::wstring wscoreLine = Utf8ToWide(scoreLine);
     size_t pos = wscoreLine.find(L"得分：");
@@ -78,69 +64,35 @@ void FileDetail_Init(const std::string& filename) {
                 }
             }
             g_detailScore = std::stoll(numStr);
-            LOG_DEBUG(std::string("文件详情：得分 ") + std::to_string(g_detailScore));
-        } catch (const std::exception& e) {
-            LOG_ERROR(std::string("文件详情：解析得分失败，异常：") + e.what());
+            LOG_DEBUG(std::string("解析得分：") + std::to_string(g_detailScore));
+        } catch (...) {
+            LOG_WARN("解析得分失败");
         }
-    } else {
-        LOG_WARN("文件详情：未找到得分行");
     }
 
-    // 统计帧数据
     std::string line;
     double firstTime = 0, lastTime = 0;
     bool hasFirst = false;
-    size_t totalObstacles = 0;
-    size_t maxObstacles = 0;
-    size_t minObstacles = std::numeric_limits<size_t>::max();
-    double sumDinoY = 0.0;
-    size_t validFrames = 0;
-
     while (std::getline(file, line)) {
         if (line.empty()) continue;
         std::istringstream iss(line);
         double t;
-        if (!(iss >> t)) continue;
-        double dinoY;
-        if (!(iss >> dinoY)) continue;
-
-        if (!hasFirst) { firstTime = t; hasFirst = true; }
-        lastTime = t;
-        g_detailFrameCount++;
-
-        if (dinoY < g_detailDinoYMin) g_detailDinoYMin = dinoY;
-        if (dinoY > g_detailDinoYMax) g_detailDinoYMax = dinoY;
-        sumDinoY += dinoY;
-        validFrames++;
-
-        size_t obstacleCount = 0;
-        double x;
-        while (iss >> x) {
-            obstacleCount++;
+        if (iss >> t) {
+            if (!hasFirst) { firstTime = t; hasFirst = true; }
+            lastTime = t;
+            g_detailFrameCount++;
         }
-        totalObstacles += obstacleCount;
-        if (obstacleCount > maxObstacles) maxObstacles = obstacleCount;
-        if (obstacleCount < minObstacles) minObstacles = obstacleCount;
     }
-
     if (g_detailFrameCount > 0) {
         g_detailDuration = lastTime - firstTime;
-        if (g_detailDuration > 0) {
-            g_detailFps = (double)g_detailFrameCount / g_detailDuration;
-            g_detailAvgInterval = g_detailDuration / g_detailFrameCount;
-        }
-        g_detailDinoYAvg = sumDinoY / validFrames;
-        g_detailObstacleMin = (minObstacles == std::numeric_limits<size_t>::max()) ? 0 : minObstacles;
-        g_detailObstacleMax = maxObstacles;
-        g_detailObstacleAvg = (double)totalObstacles / g_detailFrameCount;
-        LOG_DEBUG(std::string("文件详情：帧数 ") + std::to_string(g_detailFrameCount) + 
-                  "，时长 " + std::to_string(g_detailDuration) + 
-                  " 秒，帧率 " + std::to_string(g_detailFps) + " fps");
-    } else {
-        LOG_WARN("文件详情：未读取到有效帧数据");
+        g_detailFps = (g_detailFrameCount / g_detailDuration);
+        LOG_DEBUG(std::string("帧数=") + std::to_string(g_detailFrameCount) +
+                  "，时长=" + std::to_string(g_detailDuration) +
+                  "，帧率=" + std::to_string(g_detailFps));
     }
     file.close();
     LOG_INFO("文件详情初始化完成");
+    LOG_EXIT();
 }
 
 void FileDetail_Draw() {
@@ -179,33 +131,15 @@ void FileDetail_Draw() {
     SetConsoleCursorPosition(hBack, { (SHORT)(centerX - iVis/2), (SHORT)(startY + 4) });
     WriteConsoleW(hBack, info, iLen, &written, NULL);
 
-    swprintf(info, 256, L"帧数: %zu  时长: %.2f 秒", g_detailFrameCount, g_detailDuration);
+    swprintf(info, 256, L"帧数: %zu  时长: %.2f 秒  帧率: %.1f fps", g_detailFrameCount, g_detailDuration, g_detailFps);
     iLen = wcslen(info);
     iVis = VisualWidth(info, iLen);
     SetConsoleCursorPosition(hBack, { (SHORT)(centerX - iVis/2), (SHORT)(startY + 5) });
     WriteConsoleW(hBack, info, iLen, &written, NULL);
 
-    swprintf(info, 256, L"帧率: %.1f fps  平均间隔: %.3f 秒", g_detailFps, g_detailAvgInterval);
-    iLen = wcslen(info);
-    iVis = VisualWidth(info, iLen);
-    SetConsoleCursorPosition(hBack, { (SHORT)(centerX - iVis/2), (SHORT)(startY + 6) });
-    WriteConsoleW(hBack, info, iLen, &written, NULL);
-
-    swprintf(info, 256, L"恐龙高度: 最小 %.2f  最大 %.2f  平均 %.2f", g_detailDinoYMin, g_detailDinoYMax, g_detailDinoYAvg);
-    iLen = wcslen(info);
-    iVis = VisualWidth(info, iLen);
-    SetConsoleCursorPosition(hBack, { (SHORT)(centerX - iVis/2), (SHORT)(startY + 7) });
-    WriteConsoleW(hBack, info, iLen, &written, NULL);
-
-    swprintf(info, 256, L"障碍物数量: 最小 %zu  最大 %zu  平均 %.1f", g_detailObstacleMin, g_detailObstacleMax, g_detailObstacleAvg);
-    iLen = wcslen(info);
-    iVis = VisualWidth(info, iLen);
-    SetConsoleCursorPosition(hBack, { (SHORT)(centerX - iVis/2), (SHORT)(startY + 8) });
-    WriteConsoleW(hBack, info, iLen, &written, NULL);
-
     const wchar_t* hint = L"Enter = 开始回放  ESC = 返回历史记录";
     int hintVis = VisualWidth(hint, wcslen(hint));
-    SetConsoleCursorPosition(hBack, { (SHORT)(centerX - hintVis/2), (SHORT)(startY + 10) });
+    SetConsoleCursorPosition(hBack, { (SHORT)(centerX - hintVis/2), (SHORT)(startY + 7) });
     WriteConsoleW(hBack, hint, wcslen(hint), &written, NULL);
 
     SetConsoleActiveScreenBuffer(hBack);
@@ -213,10 +147,16 @@ void FileDetail_Draw() {
 }
 
 void FileDetail_HandleInput() {
-    if (!IsConsoleForeground()) return;
+    LOG_ENTRY();
+
+    if (!IsConsoleForeground()) {
+        LOG_DEBUG("控制台未在前台，忽略输入");
+        LOG_EXIT();
+        return;
+    }
 
     if (GetAsyncKeyState(g_config.KEY_CONFIRM) & 0x8000) {
-        LOG_INFO("文件详情：开始回放");
+        LOG_INFO("文件详情按键：回车键，开始回放");
         LoadReplayFile(g_detailFilename);
         if (!g_state.replayFrames.empty()) {
             g_state.replaySource = GameState::HISTORY_PAGE;
@@ -225,16 +165,29 @@ void FileDetail_HandleInput() {
             g_state.replayIndex = 0;
             g_state.isReplaying = true;
             QueryPerformanceCounter(&g_state.lastReplayTime);
+            LOG_DEBUG(std::string("回放已启动，帧数：") + std::to_string(g_state.replayFrames.size()));
         } else {
-            LOG_WARN("文件详情：回放数据为空，无法开始");
+            LOG_WARN("回放文件加载失败或帧数为空");
         }
         Sleep(150);
+        LOG_EXIT();
         return;
     }
     if (GetAsyncKeyState(g_config.KEY_CANCEL) & 0x8000) {
-        LOG_DEBUG("文件详情：返回历史记录");
+        LOG_INFO("文件详情按键：ESC键，返回历史记录");
         g_state.gameMode = GameState::HISTORY_PAGE;
         Sleep(150);
+        LOG_EXIT();
         return;
     }
+
+    // 记录其他按键
+    for (int i = 0; i < 256; ++i) {
+        if (GetAsyncKeyState(i) & 0x8000) {
+            LOG_DEBUG(std::string("文件详情画面按下了未知键：") + std::to_string(i));
+            break;
+        }
+    }
+
+    LOG_EXIT();
 }

@@ -15,35 +15,41 @@ static double g_replaySpeed = 1.0;
 static double g_replayAccumulator = 0.0;
 
 void Replay_Init() {
-    LOG_INFO("回放初始化");
+    LOG_ENTRY();
     g_replayPaused = false;
     g_replaySpeed = 1.0;
     g_replayAccumulator = 0.0;
     g_state.replayIndex = 0;
     g_state.isReplaying = false;
     QueryPerformanceCounter(&g_state.lastReplayTime);
-    LOG_DEBUG(std::string("回放帧数：") + std::to_string(g_state.replayFrames.size()));
+    LOG_INFO("回放初始化");
+    LOG_EXIT();
 }
 
 void Replay_Update() {
+    LOG_ENTRY();
+
     if (!g_state.isReplaying || g_state.replayFrames.empty()) {
-        if (!g_state.replayFrames.empty()) {
-            LOG_INFO("回放结束，返回来源界面");
-        }
+        LOG_INFO("回放结束，返回来源界面");
         g_state.isReplaying = false;
         g_state.gameMode = g_state.replaySource;
+        LOG_EXIT();
         return;
     }
 
-    if (g_replayPaused) return;
+    if (g_replayPaused) {
+        LOG_EXIT();
+        return;
+    }
 
     LARGE_INTEGER now;
     QueryPerformanceCounter(&now);
     double delta = (double)(now.QuadPart - g_state.lastReplayTime.QuadPart) / (double)g_state.freq.QuadPart;
     g_state.lastReplayTime = now;
-    if (delta > 0.03) {
-        LOG_WARN(std::string("回放检测到大跳帧：") + std::to_string(delta) + " 秒，截断至 0.03 秒");
-        delta = 0.03;
+
+    if (delta > 0.05) {
+        LOG_WARN(std::string("回放检测到大跳帧：") + std::to_string(delta) + " 秒，截断至 0.05 秒");
+        delta = 0.05;
     }
 
     g_replayAccumulator += delta * g_replaySpeed;
@@ -52,20 +58,19 @@ void Replay_Update() {
         g_replayAccumulator -= g_config.REPLAY_FRAME_INTERVAL;
         g_state.replayIndex++;
         if (g_state.replayIndex >= g_state.replayFrames.size()) {
-            LOG_INFO("回放播放完毕，帧数：" + std::to_string(g_state.replayFrames.size()));
+            LOG_INFO(std::string("回放播放完毕，帧数：") + std::to_string(g_state.replayIndex));
             g_state.isReplaying = false;
             g_state.gameMode = g_state.replaySource;
+            LOG_EXIT();
             return;
         }
         const auto& frame = g_state.replayFrames[g_state.replayIndex];
         g_state.dinoY = frame.dinoY;
         g_state.platforms.assign(frame.platforms.begin(), frame.platforms.end());
         g_state.currentTime = frame.timestamp;
-        // 每30帧记录一次进度调试
-        if (g_state.replayIndex % 30 == 0) {
-            LOG_DEBUG(std::string("回放进度：") + std::to_string(g_state.replayIndex) + "/" + std::to_string(g_state.replayFrames.size()));
-        }
     }
+
+    LOG_EXIT();
 }
 
 void Replay_Draw() {
@@ -152,41 +157,51 @@ void Replay_Draw() {
 }
 
 void Replay_HandleInput() {
-    if (!IsConsoleForeground()) return;
+    LOG_ENTRY();
+
+    if (!IsConsoleForeground()) {
+        LOG_DEBUG("控制台未在前台，忽略输入");
+        LOG_EXIT();
+        return;
+    }
 
     if (GetAsyncKeyState(g_config.KEY_CANCEL) & 0x8000) {
-        LOG_INFO("回放：ESC 退出回放");
+        LOG_INFO("回放按键：ESC，退出回放，返回来源界面");
         g_state.isReplaying = false;
         g_state.gameMode = g_state.replaySource;
         g_replayPaused = false;
         g_replaySpeed = 1.0;
         g_replayAccumulator = 0.0;
         Sleep(150);
+        LOG_EXIT();
         return;
     }
 
     if (GetAsyncKeyState(VK_SPACE) & 0x8000) {
         g_replayPaused = !g_replayPaused;
-        LOG_INFO(std::string("回放：") + (g_replayPaused ? "暂停" : "继续"));
+        LOG_INFO(std::string("回放按键：空格，") + (g_replayPaused ? "暂停" : "继续"));
         Sleep(150);
+        LOG_EXIT();
         return;
     }
 
     if (GetAsyncKeyState(VK_RIGHT) & 0x8000) {
         if (g_replaySpeed < 4.0) {
             g_replaySpeed = std::min(4.0, g_replaySpeed + 0.5);
-            LOG_DEBUG(std::string("回放速度加快至 ") + std::to_string(g_replaySpeed) + "x");
+            LOG_INFO(std::string("回放按键：右方向键，加速到 ") + std::to_string(g_replaySpeed) + "x");
         }
         Sleep(150);
+        LOG_EXIT();
         return;
     }
 
     if (GetAsyncKeyState(VK_LEFT) & 0x8000) {
         if (g_replaySpeed > 0.5) {
             g_replaySpeed = std::max(0.5, g_replaySpeed - 0.5);
-            LOG_DEBUG(std::string("回放速度减慢至 ") + std::to_string(g_replaySpeed) + "x");
+            LOG_INFO(std::string("回放按键：左方向键，减速到 ") + std::to_string(g_replaySpeed) + "x");
         }
         Sleep(150);
+        LOG_EXIT();
         return;
     }
 
@@ -199,9 +214,10 @@ void Replay_HandleInput() {
                 g_state.platforms.assign(frame.platforms.begin(), frame.platforms.end());
                 g_state.currentTime = frame.timestamp;
                 g_replayAccumulator = frame.timestamp;
-                LOG_DEBUG("回放单帧前进");
+                LOG_INFO(std::string("回放按键：上方向键，单帧前进到 ") + std::to_string(g_state.replayIndex));
             }
             Sleep(150);
+            LOG_EXIT();
             return;
         }
         if (GetAsyncKeyState(VK_DOWN) & 0x8000) {
@@ -212,10 +228,13 @@ void Replay_HandleInput() {
                 g_state.platforms.assign(frame.platforms.begin(), frame.platforms.end());
                 g_state.currentTime = frame.timestamp;
                 g_replayAccumulator = frame.timestamp;
-                LOG_DEBUG("回放单帧后退");
+                LOG_INFO(std::string("回放按键：下方向键，单帧后退到 ") + std::to_string(g_state.replayIndex));
             }
             Sleep(150);
+            LOG_EXIT();
             return;
         }
     }
+
+    LOG_EXIT();
 }

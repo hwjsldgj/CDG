@@ -20,19 +20,29 @@
 #include <windows.h>
 #include <sys/stat.h>
 
+static std::string GetLogFileName() {
+    auto now = std::chrono::system_clock::now();
+    auto time = std::chrono::system_clock::to_time_t(now);
+    auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch()) % 1000;
+    struct tm tm_buf;
+    localtime_s(&tm_buf, &time);
+    char buf[64];
+    snprintf(buf, sizeof(buf), "logs/logs_%04d%02d%02d_%02d%02d%02d.%03d.log",
+             tm_buf.tm_year + 1900, tm_buf.tm_mon + 1, tm_buf.tm_mday,
+             tm_buf.tm_hour, tm_buf.tm_min, tm_buf.tm_sec, (int)ms.count());
+    return std::string(buf);
+}
+
 int main() {
-    // ---- 日志初始化 ----
-    Logger::Instance().SetOutputFile("logs/game.log");
+    Logger::Instance().SetOutputFile(GetLogFileName());
     LOG_INFO("========================================");
     LOG_INFO("程序启动");
     LOG_INFO("恐龙跑酷游戏 v1.0");
     LOG_INFO("========================================");
 
-    // ---- 加载配置 ----
     LoadConfig();
     LoadHighScore();
 
-    // ---- 初始化各模块 ----
     LOG_DEBUG("初始化各模块...");
     Menu_Init();
     Pause_Init();
@@ -54,7 +64,6 @@ int main() {
     LARGE_INTEGER lastPhysicsTime;
     QueryPerformanceCounter(&lastPhysicsTime);
 
-    // ---- 热读取：记录各文件的最后修改时间 ----
     struct _stat configStat, highScoreStat, dataDirStat;
     time_t lastConfigTime = 0, lastHighScoreTime = 0, lastDataDirTime = 0;
     if (_stat("config.ini", &configStat) == 0) lastConfigTime = configStat.st_mtime;
@@ -64,12 +73,10 @@ int main() {
     LOG_INFO("进入主循环");
 
     while (true) {
-        // ---- 热读取：每 60 帧检查一次 ----
         static int frameCount = 0;
         frameCount++;
         if (frameCount % 60 == 0) {
             struct _stat newStat;
-            // 检查 config.ini
             if (_stat("config.ini", &newStat) == 0 && newStat.st_mtime != lastConfigTime) {
                 LOG_INFO("检测到配置文件变更，重新加载");
                 LoadConfig();
@@ -78,15 +85,11 @@ int main() {
                 lastConfigTime = newStat.st_mtime;
                 LOG_DEBUG("配置文件重新加载完成");
             }
-
-            // 检查 data/highscore.dat
             if (_stat("data/highscore.dat", &newStat) == 0 && newStat.st_mtime != lastHighScoreTime) {
                 LOG_INFO("检测到最高分数据变更，重新加载");
                 LoadHighScore();
                 lastHighScoreTime = newStat.st_mtime;
             }
-
-            // 检查 data/ 目录（文件增删改）
             if (_stat("data", &newStat) == 0 && newStat.st_mtime != lastDataDirTime) {
                 LOG_INFO("检测到 data 目录变更，刷新列表");
                 History_Init();
@@ -95,7 +98,6 @@ int main() {
             }
         }
 
-        // ---- 状态机 ----
         switch (g_state.gameMode) {
             case GameState::MENU:
                 Menu_HandleInput();
@@ -181,7 +183,6 @@ int main() {
                 break;
         }
 
-        // ---- 帧率控制 ----
         static LARGE_INTEGER lastDrawTime = {0};
         LARGE_INTEGER now;
         QueryPerformanceCounter(&now);
@@ -195,7 +196,6 @@ int main() {
         lastDrawTime = now;
     }
 
-    // ---- 清理 ----
     LOG_INFO("程序退出，清理资源");
     for (int i = 0; i < g_config.SCREEN_HEIGHT; ++i)
         delete[] g_state.screen[i];

@@ -27,13 +27,17 @@ static void ExecutePauseAction(int idx) {
         LOG_INFO("暂停菜单：返回主菜单");
         g_state.gameMode = GameState::MENU;
         Menu_ResetExitConfirm();
+    } else {
+        LOG_WARN(std::string("未知暂停动作：") + action);
     }
 }
 
 void Pause_Init() {
+    LOG_ENTRY();
     g_pauseItems = g_config.pauseItems;
     g_selectedIndex = 0;
     LOG_DEBUG(std::string("暂停菜单初始化，共 ") + std::to_string(g_pauseItems.size()) + " 项");
+    LOG_EXIT();
 }
 
 void Pause_Draw() {
@@ -86,7 +90,13 @@ void Pause_Draw() {
 }
 
 void Pause_HandleInput() {
-    if (!IsConsoleForeground()) return;
+    LOG_ENTRY();
+
+    if (!IsConsoleForeground()) {
+        LOG_DEBUG("控制台未在前台，忽略输入");
+        LOG_EXIT();
+        return;
+    }
 
     int num = -1;
     for (int i = 0; i <= 9; ++i) {
@@ -96,34 +106,42 @@ void Pause_HandleInput() {
     if (num != -1) {
         if (num >= 1 && num <= (int)g_pauseItems.size()) {
             int idx = num - 1;
-            LOG_DEBUG(std::string("暂停菜单数字键") + std::to_string(num) + "：选择 " + g_pauseItems[idx].label);
+            LOG_INFO(std::string("暂停菜单按键：数字键") + std::to_string(num) + "，选择 " + g_pauseItems[idx].label);
             ExecutePauseAction(idx);
         }
         Sleep(150);
+        LOG_EXIT();
         return;
     }
 
     if (GetAsyncKeyState(g_config.KEY_NAV_UP) & 0x8000) {
+        LOG_INFO("暂停菜单按键：上方向键");
         g_selectedIndex--;
         if (g_selectedIndex < 0) g_selectedIndex = (int)g_pauseItems.size() - 1;
         Sleep(150);
+        LOG_EXIT();
         return;
     }
     if (GetAsyncKeyState(g_config.KEY_NAV_DOWN) & 0x8000) {
+        LOG_INFO("暂停菜单按键：下方向键");
         g_selectedIndex++;
         if (g_selectedIndex >= (int)g_pauseItems.size()) g_selectedIndex = 0;
         Sleep(150);
+        LOG_EXIT();
         return;
     }
     if (GetAsyncKeyState(g_config.KEY_CONFIRM) & 0x8000) {
-        LOG_DEBUG("暂停菜单回车确认：选择 " + g_pauseItems[g_selectedIndex].label);
+        LOG_INFO("暂停菜单按键：回车键，选择 " + g_pauseItems[g_selectedIndex].label);
         ExecutePauseAction(g_selectedIndex);
         Sleep(150);
+        LOG_EXIT();
         return;
     }
     if (GetAsyncKeyState(g_config.KEY_CANCEL) & 0x8000 || GetAsyncKeyState(g_config.KEY_PAUSE) & 0x8000) {
-        LOG_DEBUG("暂停菜单取消/暂停键：继续游戏");
+        LOG_INFO("暂停菜单按键：ESC或暂停键，继续游戏");
         g_state.gameMode = GameState::PLAYING;
         Sleep(150);
     }
+
+    LOG_EXIT();
 }

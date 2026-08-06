@@ -38,19 +38,27 @@ GameState::GameState()
 GameState g_state;
 
 void UpdateHighScore() {
+    LOG_ENTRY();
     if (g_state.score > g_state.highScore) {
         g_state.highScore = g_state.score;
         g_state.highScoreTime = g_state.startTime;
         LOG_INFO(std::string("更新最高分：") + std::to_string(g_state.highScore) + "，时间戳：" + std::to_string(g_state.startTime));
+    } else {
+        LOG_DEBUG(std::string("当前分数 ") + std::to_string(g_state.score) + " 未超过最高分 " + std::to_string(g_state.highScore));
     }
+    LOG_EXIT();
 }
 
 void ResetGame() {
+    LOG_ENTRY();
     LOG_INFO("重置游戏");
+
     if (g_state.gameOver) {
+        LOG_DEBUG("游戏结束状态，先更新最高分");
         UpdateHighScore();
     }
 
+    // 重置各状态
     g_state.gameOver = false;
     g_state.score = 0;
     g_state.dinoY = g_config.GROUND_Y;
@@ -76,6 +84,10 @@ void ResetGame() {
 
     if (g_state.gameMode == GameState::MENU) {
         g_state.gameMode = GameState::PLAYING;
+        LOG_DEBUG("从菜单启动游戏");
     }
-    LOG_DEBUG("游戏重置完成，当前模式：" + std::to_string(g_state.gameMode));
+
+    LOG_DEBUG(std::string("重置完成，地面高度=") + std::to_string(g_config.GROUND_Y) +
+              "，初始障碍物位置=" + std::to_string(g_config.SCREEN_WIDTH - g_config.PLATFORM_WIDTH - g_config.INITIAL_PLATFORM_OFFSET));
+    LOG_EXIT();
 }

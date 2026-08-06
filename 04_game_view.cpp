@@ -10,8 +10,9 @@
 #include <cstdio>
 
 void Game_Init() {
+    LOG_ENTRY();
     LOG_DEBUG("游戏视图初始化");
-    // 无需额外初始化
+    LOG_EXIT();
 }
 
 void Game_Draw() {
@@ -46,7 +47,10 @@ void Game_Draw() {
     DWORD bytesWritten;
     for (int y = 0; y < g_config.SCREEN_HEIGHT; ++y) {
         COORD pos = { 0, (SHORT)y };
-        WriteConsoleOutputCharacterA(hBack, g_state.screen[y], g_config.SCREEN_WIDTH, pos, &bytesWritten);
+        BOOL result = WriteConsoleOutputCharacterA(hBack, g_state.screen[y], g_config.SCREEN_WIDTH, pos, &bytesWritten);
+        if (!result) {
+            LOG_WARN(std::string("WriteConsoleOutputCharacterA 失败，行 ") + std::to_string(y));
+        }
     }
 
     std::wstring scoreText = Utf8ToWide(g_config.scorePrefix) + std::to_wstring(g_state.score);
@@ -72,39 +76,52 @@ void Game_Draw() {
     SetConsoleCursorPosition(hBack, { (SHORT)startX, 1 });
     WriteConsoleW(hBack, highText.c_str(), highText.length(), &bytesWritten, NULL);
 
-    SetConsoleActiveScreenBuffer(hBack);
-    g_state.currentFront = back;
+    BOOL result = SetConsoleActiveScreenBuffer(hBack);
+    if (!result) {
+        LOG_ERROR("SetConsoleActiveScreenBuffer 失败");
+    } else {
+        g_state.currentFront = back;
+    }
 }
 
 void Game_HandleInput() {
+    LOG_ENTRY();
+
     if (!IsConsoleForeground()) {
+        LOG_DEBUG("控制台未在前台，忽略输入");
         g_state.spacePressed = false;
+        LOG_EXIT();
         return;
     }
 
     bool isJumpKeyDown = (GetAsyncKeyState(g_config.KEY_JUMP) & 0x8000) != 0;
+    bool isPauseKeyDown = (GetAsyncKeyState(g_config.KEY_PAUSE) & 0x8000) != 0;
+    bool isCancelKeyDown = (GetAsyncKeyState(g_config.KEY_CANCEL) & 0x8000) != 0;
 
-    // 暂停键
-    if (GetAsyncKeyState(g_config.KEY_PAUSE) & 0x8000) {
-        LOG_INFO("暂停键按下，进入暂停");
+    if (isPauseKeyDown) {
+        LOG_INFO("按键：暂停键（P）按下，进入暂停");
         g_state.gameMode = GameState::PAUSED;
         Pause_Init();
         Sleep(150);
+        LOG_EXIT();
         return;
     }
-    if (GetAsyncKeyState(g_config.KEY_CANCEL) & 0x8000) {
-        LOG_INFO("取消键按下，进入暂停");
+    if (isCancelKeyDown) {
+        LOG_INFO("按键：取消键（ESC）按下，进入暂停");
         g_state.gameMode = GameState::PAUSED;
         Pause_Init();
         Sleep(150);
+        LOG_EXIT();
         return;
     }
 
-    // 跳跃：按住键且在地面时起跳（连续跳跃）
     if (!g_state.isJumping && g_state.dinoY >= g_config.GROUND_Y && isJumpKeyDown) {
         g_state.dinoVy = g_config.JUMP_VEL_MAX;
         g_state.isJumping = true;
-        LOG_DEBUG("触发跳跃，初速度：" + std::to_string(g_config.JUMP_VEL_MAX));
+        LOG_INFO(std::string("按键：跳跃键按下，初速度=") + std::to_string(g_config.JUMP_VEL_MAX) +
+                 "，当前Y=" + std::to_string(g_state.dinoY));
     }
     g_state.spacePressed = isJumpKeyDown;
+
+    LOG_EXIT();
 }

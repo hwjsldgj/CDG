@@ -9,7 +9,9 @@
 #include <ctime>
 
 void HighScore_Init() {
+    LOG_ENTRY();
     LOG_DEBUG("最高分页面初始化");
+    LOG_EXIT();
 }
 
 void HighScore_Draw() {
@@ -57,13 +59,34 @@ void HighScore_Draw() {
 }
 
 void HighScore_HandleInput() {
-    if (!IsConsoleForeground()) return;
+    LOG_ENTRY();
+
+    if (!IsConsoleForeground()) {
+        LOG_DEBUG("控制台未在前台，忽略输入");
+        LOG_EXIT();
+        return;
+    }
+
+    bool anyKey = false;
     if (GetAsyncKeyState(g_config.KEY_CANCEL) & 0x8000 ||
         GetAsyncKeyState(g_config.KEY_CONFIRM) & 0x8000 ||
         GetAsyncKeyState(g_config.KEY_JUMP) & 0x8000 ||
         GetAsyncKeyState(VK_SPACE) & 0x8000) {
-        LOG_DEBUG("最高分页面：返回主菜单");
+        anyKey = true;
+        LOG_INFO("最高分页面按键：返回主菜单");
         g_state.gameMode = GameState::MENU;
         Sleep(150);
     }
+
+    // 记录其他任何按键（用于调试）
+    if (!anyKey) {
+        for (int i = 0; i < 256; ++i) {
+            if (GetAsyncKeyState(i) & 0x8000) {
+                LOG_DEBUG(std::string("最高分页面按下了未知键：") + std::to_string(i));
+                break;
+            }
+        }
+    }
+
+    LOG_EXIT();
 }

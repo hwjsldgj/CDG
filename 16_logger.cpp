@@ -4,6 +4,8 @@
 #include <sstream>
 #include <ctime>
 #include <iostream>
+#include <direct.h>   // for _mkdir on Windows
+#include <sys/stat.h> // for stat
 
 Logger& Logger::Instance() {
     static Logger instance;
@@ -31,10 +33,22 @@ void Logger::SetOutputFile(const std::string& filename) {
     if (m_initialized) {
         m_file.close();
     }
+    // 确保目录存在
+    size_t pos = filename.find_last_of("/\\");
+    if (pos != std::string::npos) {
+        std::string dir = filename.substr(0, pos);
+        struct stat st;
+        if (stat(dir.c_str(), &st) != 0) {
+            if (_mkdir(dir.c_str()) != 0) {
+                std::cerr << "创建日志目录失败：" << dir << std::endl;
+            }
+        }
+    }
     m_filename = filename;
     m_file.open(m_filename, std::ios::out | std::ios::app);
     if (!m_file.is_open()) {
         std::cerr << "无法打开日志文件：" << m_filename << std::endl;
+        // 降级到当前目录
         m_file.open("game.log", std::ios::out | std::ios::app);
     }
     m_initialized = true;

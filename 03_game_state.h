@@ -51,9 +51,9 @@ struct GameState {
     size_t replayIndex;
     bool isReplaying;
     LARGE_INTEGER lastReplayTime;
-    GameMode replaySource;   // 记录回放来源，用于回放结束后返回
+    GameMode replaySource;
 
-    // 历史记录（占位）
+    // 历史记录
     struct HistoryEntry {
         time_t timestamp;
         long long score;

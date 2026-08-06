@@ -70,18 +70,23 @@ static void ExecuteMenuAction(int idx) {
     } else if (action == "exit") {
         LOG_INFO("主菜单：触发退出确认");
         g_exitConfirm = true;
+    } else {
+        LOG_WARN(std::string("未知菜单动作：") + action);
     }
 }
 
 void Menu_Init() {
+    LOG_ENTRY();
     g_menuItems = g_config.menuItems;
     g_selectedIndex = 0;
     g_exitConfirm = false;
     LOG_DEBUG(std::string("主菜单初始化，共 ") + std::to_string(g_menuItems.size()) + " 项");
+    LOG_EXIT();
 }
 
 void Menu_ResetExitConfirm() {
     g_exitConfirm = false;
+    LOG_DEBUG("重置退出确认状态");
 }
 
 void Menu_Draw() {
@@ -144,21 +149,28 @@ void Menu_Draw() {
 }
 
 void Menu_HandleInput() {
-    if (!IsConsoleForeground()) return;
+    LOG_ENTRY();
+
+    if (!IsConsoleForeground()) {
+        LOG_DEBUG("控制台未在前台，忽略输入");
+        LOG_EXIT();
+        return;
+    }
 
     if (g_exitConfirm) {
         if (GetAsyncKeyState(g_config.KEY_EXIT_CONFIRM) & 0x8000) {
-            LOG_INFO("退出确认：选择是，程序退出");
+            LOG_INFO("退出确认：按键Y，确认退出");
             CloseHandle(g_state.hBuffer[0]);
             CloseHandle(g_state.hBuffer[1]);
             timeEndPeriod(1);
             exit(0);
         }
         if (GetAsyncKeyState(g_config.KEY_EXIT_DENY) & 0x8000 || GetAsyncKeyState(g_config.KEY_CANCEL) & 0x8000) {
-            LOG_DEBUG("退出确认：选择否，取消退出");
+            LOG_INFO("退出确认：按键N或ESC，取消退出");
             g_exitConfirm = false;
             Sleep(150);
         }
+        LOG_EXIT();
         return;
     }
 
@@ -171,39 +183,47 @@ void Menu_HandleInput() {
         if (num == 0) {
             int last = (int)g_menuItems.size() - 1;
             if (last >= 0 && g_menuItems[last].action == "exit") {
-                LOG_DEBUG("数字键0：触发退出确认");
+                LOG_INFO("按键：数字键0，触发退出确认");
                 g_exitConfirm = true;
             }
         } else if (num >= 1 && num <= (int)g_menuItems.size()) {
             int idx = num - 1;
-            LOG_DEBUG(std::string("数字键") + std::to_string(num) + "：选择菜单项 " + g_menuItems[idx].label);
+            LOG_INFO(std::string("按键：数字键") + std::to_string(num) + "，选择菜单项 " + g_menuItems[idx].label);
             ExecuteMenuAction(idx);
         }
         Sleep(150);
+        LOG_EXIT();
         return;
     }
 
     if (GetAsyncKeyState(g_config.KEY_NAV_UP) & 0x8000) {
+        LOG_INFO("按键：上方向键，菜单上移");
         g_selectedIndex--;
         if (g_selectedIndex < 0) g_selectedIndex = (int)g_menuItems.size() - 1;
         Sleep(150);
+        LOG_EXIT();
         return;
     }
     if (GetAsyncKeyState(g_config.KEY_NAV_DOWN) & 0x8000) {
+        LOG_INFO("按键：下方向键，菜单下移");
         g_selectedIndex++;
         if (g_selectedIndex >= (int)g_menuItems.size()) g_selectedIndex = 0;
         Sleep(150);
+        LOG_EXIT();
         return;
     }
     if (GetAsyncKeyState(g_config.KEY_CONFIRM) & 0x8000) {
-        LOG_DEBUG("回车确认：选择菜单项 " + g_menuItems[g_selectedIndex].label);
+        LOG_INFO("按键：回车键，确认选择菜单项 " + g_menuItems[g_selectedIndex].label);
         ExecuteMenuAction(g_selectedIndex);
         Sleep(150);
+        LOG_EXIT();
         return;
     }
     if (GetAsyncKeyState(g_config.KEY_CANCEL) & 0x8000) {
-        LOG_DEBUG("ESC键：触发退出确认");
+        LOG_INFO("按键：ESC键，触发退出确认");
         g_exitConfirm = true;
         Sleep(150);
     }
+
+    LOG_EXIT();
 }

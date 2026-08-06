@@ -12,19 +12,24 @@
 static void EnsureDataDir() {
     struct stat st;
     if (stat("data", &st) != 0) {
-        _mkdir("data");
-        LOG_DEBUG("创建 data/ 目录");
+        int result = _mkdir("data");
+        if (result == 0) {
+            LOG_DEBUG("创建 data 目录成功");
+        } else {
+            LOG_ERROR("创建 data 目录失败，错误码：" + std::to_string(errno));
+        }
     }
 }
 
 void LoadHighScore() {
-    LOG_INFO("加载最高分数据");
+    LOG_ENTRY();
     EnsureDataDir();
     std::ifstream file("data/highscore.dat");
     if (!file.is_open()) {
-        LOG_WARN("最高分文件 data/highscore.dat 未找到，使用默认值 0");
+        LOG_WARN("最高分文件未找到，使用默认值 0");
         g_state.highScore = 0;
         g_state.highScoreTime = 0;
+        LOG_EXIT();
         return;
     }
     long long score;
@@ -34,31 +39,34 @@ void LoadHighScore() {
         g_state.highScoreTime = t;
         LOG_INFO(std::string("最高分加载成功：") + std::to_string(score) + "，时间戳：" + std::to_string(t));
     } else {
-        LOG_WARN("最高分文件 data/highscore.dat 损坏，使用默认值 0");
+        LOG_WARN("最高分文件损坏，使用默认值 0");
         g_state.highScore = 0;
         g_state.highScoreTime = 0;
     }
     file.close();
-    LOG_DEBUG("最高分加载完成");
+    LOG_EXIT();
 }
 
 void SaveHighScore() {
-    LOG_INFO("保存最高分数据");
+    LOG_ENTRY();
     EnsureDataDir();
     std::ofstream file("data/highscore.dat");
     if (file.is_open()) {
         file << g_state.highScore << std::endl;
         file << g_state.highScoreTime;
-        file.close();
-        LOG_DEBUG(std::string("最高分保存成功：") + std::to_string(g_state.highScore) + "，时间戳：" + std::to_string(g_state.highScoreTime));
+        LOG_INFO(std::string("最高分保存成功：") + std::to_string(g_state.highScore));
     } else {
-        LOG_ERROR("无法打开 data/highscore.dat 进行写入");
+        LOG_ERROR("无法打开最高分文件进行写入");
     }
+    file.close();
+    LOG_EXIT();
 }
 
 void SaveReplayFile() {
+    LOG_ENTRY();
     if (g_state.recordFrames.empty()) {
-        LOG_DEBUG("无录制帧数据，跳过保存回放文件");
+        LOG_WARN("无可录制的帧数据，跳过保存");
+        LOG_EXIT();
         return;
     }
 
@@ -72,7 +80,8 @@ void SaveReplayFile() {
 
     std::ofstream file("data/" + filename);
     if (!file.is_open()) {
-        LOG_ERROR(std::string("无法创建回放文件：data/") + filename);
+        LOG_ERROR("无法创建回放文件：" + filename);
+        LOG_EXIT();
         return;
     }
 
@@ -90,25 +99,29 @@ void SaveReplayFile() {
         }
         file << std::endl;
     }
-
     file.close();
     LOG_INFO(std::string("回放文件保存成功：data/") + filename + "，帧数：" + std::to_string(g_state.recordFrames.size()));
+    LOG_EXIT();
 }
 
 void LoadReplayFile(const std::string& filename) {
+    LOG_ENTRY();
     LOG_INFO(std::string("加载回放文件：data/") + filename);
     g_state.replayFrames.clear();
     std::ifstream file("data/" + filename);
     if (!file.is_open()) {
-        LOG_ERROR(std::string("无法打开回放文件：data/") + filename);
+        LOG_ERROR("无法打开回放文件：" + filename);
+        LOG_EXIT();
         return;
     }
 
     std::string line;
+    // 跳过前三行
     for (int i = 0; i < 3; ++i) {
         if (!std::getline(file, line)) {
-            LOG_ERROR("回放文件格式错误（缺少头部信息）");
+            LOG_WARN("回放文件格式异常，行数不足");
             file.close();
+            LOG_EXIT();
             return;
         }
     }
@@ -118,7 +131,7 @@ void LoadReplayFile(const std::string& filename) {
         std::istringstream iss(line);
         GameState::RecordFrame frame;
         if (!(iss >> frame.timestamp >> frame.dinoY)) {
-            LOG_WARN("回放文件行解析失败，跳过：" + line);
+            LOG_WARN("回放文件帧解析失败，跳过行：" + line);
             continue;
         }
         double x;
@@ -129,4 +142,5 @@ void LoadReplayFile(const std::string& filename) {
     }
     file.close();
     LOG_INFO(std::string("回放文件加载成功，帧数：") + std::to_string(g_state.replayFrames.size()));
+    LOG_EXIT();
 }
