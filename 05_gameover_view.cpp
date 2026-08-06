@@ -33,25 +33,19 @@ void GameOver_Draw() {
     std::wstring scoreText = Utf8ToWide(g_config.scorePrefix) + std::to_wstring(g_state.score);
     std::wstring highText = Utf8ToWide(g_config.highscorePrefix) + std::to_wstring(g_state.highScore);
 
-    // 固定冒号位置：冒号列 = SCREEN_WIDTH - 5（距右边缘5格）
-    int colonCol = g_config.SCREEN_WIDTH - 5;
+    // 计算每行宽度并居中绘制
+    int scoreWidth = VisualWidth(scoreText);
+    int highWidth = VisualWidth(highText);
+    int maxWidth = (scoreWidth > highWidth) ? scoreWidth : highWidth;
 
-    // 绘制得分
-    size_t colonPos = scoreText.find(L'：');
-    if (colonPos == std::wstring::npos) colonPos = 0;
-    int prefixWidth = VisualWidth(scoreText.substr(0, colonPos));
-    int startX = colonCol - prefixWidth;
-    if (startX < 0) startX = 0;
-    SetConsoleCursorPosition(hBack, { (SHORT)startX, (SHORT)(centerY + 1) });
+    // 两行分别居中
+    int scoreX = centerX - scoreWidth / 2;
+    int highX = centerX - highWidth / 2;
+
+    SetConsoleCursorPosition(hBack, { (SHORT)scoreX, (SHORT)(centerY + 1) });
     WriteConsoleW(hBack, scoreText.c_str(), scoreText.length(), &written, NULL);
 
-    // 绘制最高分
-    colonPos = highText.find(L'：');
-    if (colonPos == std::wstring::npos) colonPos = 0;
-    prefixWidth = VisualWidth(highText.substr(0, colonPos));
-    startX = colonCol - prefixWidth;
-    if (startX < 0) startX = 0;
-    SetConsoleCursorPosition(hBack, { (SHORT)startX, (SHORT)(centerY + 2) });
+    SetConsoleCursorPosition(hBack, { (SHORT)highX, (SHORT)(centerY + 2) });
     WriteConsoleW(hBack, highText.c_str(), highText.length(), &written, NULL);
 
     // 操作提示（居中）

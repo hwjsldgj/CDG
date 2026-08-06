@@ -2,7 +2,7 @@
 #include "01_config.h"
 #include "03_game_state.h"
 #include "02_console.h"
-#include "08_pause_view.h" 
+#include "08_pause_view.h"
 #include "11_utils.h"
 #include <windows.h>
 #include <cstring>
@@ -17,7 +17,7 @@ void Game_Draw() {
     HANDLE hBack = g_state.hBuffer[back];
     EnsureBufferSize(hBack);
 
-    // 清空屏幕缓冲区
+    // 清空屏幕缓冲区（图形部分）
     for (int y = 0; y < g_config.SCREEN_HEIGHT; ++y)
         memset(g_state.screen[y], ' ', g_config.SCREEN_WIDTH);
 
@@ -45,29 +45,40 @@ void Game_Draw() {
         }
     }
 
-    // 得分
-    char scoreStr[32];
-    snprintf(scoreStr, sizeof(scoreStr), "%s%lld", g_config.scorePrefix.c_str(), g_state.score);
-    int len = strlen(scoreStr);
-    int startX = g_config.SCREEN_WIDTH - len - 1;
-    if (startX < 0) startX = 0;
-    for (int i = 0; i < len && (startX + i) < g_config.SCREEN_WIDTH; ++i)
-        g_state.screen[0][startX + i] = scoreStr[i];
-
-    // 最高分（仅数值）
-    char highScoreStr[32];
-    snprintf(highScoreStr, sizeof(highScoreStr), "%s%lld", g_config.highscorePrefix.c_str(), g_state.highScore);
-    int hsLen = strlen(highScoreStr);
-    int hsX = g_config.SCREEN_WIDTH - hsLen - 1;
-    if (hsX < 0) hsX = 0;
-    for (int i = 0; i < hsLen && (hsX + i) < g_config.SCREEN_WIDTH; ++i)
-        g_state.screen[1][hsX + i] = highScoreStr[i];
-
+    // 将图形写入后台缓冲区
     DWORD bytesWritten;
     for (int y = 0; y < g_config.SCREEN_HEIGHT; ++y) {
         COORD pos = { 0, (SHORT)y };
         WriteConsoleOutputCharacterA(hBack, g_state.screen[y], g_config.SCREEN_WIDTH, pos, &bytesWritten);
     }
+
+    // ---- 使用宽字符绘制得分和最高分（冒号对齐，整体左移2格） ----
+    std::wstring scoreText = Utf8ToWide(g_config.scorePrefix) + std::to_wstring(g_state.score);
+    std::wstring highText = Utf8ToWide(g_config.highscorePrefix) + std::to_wstring(g_state.highScore);
+
+    // 冒号列：原距右边缘6格，再左移2格 -> 距右边缘8格（即向右边缘减少2，所以数值减去2等于距右边缘8格）
+    // 即 colonCol = g_config.SCREEN_WIDTH - 8
+    int colonCol = g_config.SCREEN_WIDTH - 8;  // 左移2格
+
+    // 得分（第一行）
+    size_t colonPos = scoreText.find(L'：');
+    if (colonPos == std::wstring::npos) colonPos = 0;
+    std::wstring prefix = scoreText.substr(0, colonPos);
+    int prefixWidth = VisualWidth(prefix);
+    int startX = colonCol - prefixWidth;
+    if (startX < 0) startX = 0;
+    SetConsoleCursorPosition(hBack, { (SHORT)startX, 0 });
+    WriteConsoleW(hBack, scoreText.c_str(), scoreText.length(), &bytesWritten, NULL);
+
+    // 最高分（第二行）
+    colonPos = highText.find(L'：');
+    if (colonPos == std::wstring::npos) colonPos = 0;
+    prefix = highText.substr(0, colonPos);
+    prefixWidth = VisualWidth(prefix);
+    startX = colonCol - prefixWidth;
+    if (startX < 0) startX = 0;
+    SetConsoleCursorPosition(hBack, { (SHORT)startX, 1 });
+    WriteConsoleW(hBack, highText.c_str(), highText.length(), &bytesWritten, NULL);
 
     SetConsoleActiveScreenBuffer(hBack);
     g_state.currentFront = back;
@@ -84,7 +95,7 @@ void Game_HandleInput() {
     // 暂停键
     if (GetAsyncKeyState(g_config.KEY_PAUSE) & 0x8000) {
         g_state.gameMode = GameState::PAUSED;
-        Pause_Init(); // 需要在 pause_view.h 中声明
+        Pause_Init();
         Sleep(150);
         return;
     }
