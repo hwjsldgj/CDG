@@ -1,6 +1,6 @@
-#include "console.h"
-#include "config.h"
-#include "game_state.h"
+#include "02_console.h"
+#include "01_config.h"
+#include "03_game_state.h"
 #include <iostream>
 #include <string>
 #include <cstdlib>

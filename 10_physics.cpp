@@ -1,6 +1,6 @@
-#include "physics.h"
-#include "config.h"
-#include "game_state.h"
+#include "10_physics.h"
+#include "01_config.h"
+#include "03_game_state.h"
 #include <cstdlib>
 #include <windows.h>
 

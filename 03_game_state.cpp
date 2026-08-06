@@ -1,5 +1,5 @@
-#include "game_state.h"
-#include "config.h"
+#include "03_game_state.h"
+#include "01_config.h"
 #include <windows.h>
 
 GameState::GameState()
