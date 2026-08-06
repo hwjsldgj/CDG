@@ -90,26 +90,21 @@ void HandlePauseInput() {
     int num = GetPressedNumber();
     if (num != -1) {
         if (num == 1) {
-            // 继续游戏
             g_state.gameMode = GameState::PLAYING;
             return;
         } else if (num == 2) {
-            // 重新开始
             ResetGame();
             g_state.gameMode = GameState::PLAYING;
             return;
         } else if (num == 3) {
-            // 返回主菜单
             g_state.gameMode = GameState::MENU;
             g_state.menuSelection = 0;
             g_state.exitConfirm = false;
             return;
         }
-        // 其他数字忽略
         return;
     }
 
-    // 上下键
     if (GetAsyncKeyState(VK_UP) & 0x8000) {
         g_state.pauseSelection--;
         if (g_state.pauseSelection < 0) g_state.pauseSelection = 2;
@@ -123,7 +118,6 @@ void HandlePauseInput() {
         return;
     }
 
-    // 回车确认
     if (GetAsyncKeyState(VK_RETURN) & 0x8000) {
         if (g_state.pauseSelection == 0) {
             g_state.gameMode = GameState::PLAYING;
@@ -139,7 +133,6 @@ void HandlePauseInput() {
         return;
     }
 
-    // 按 ESC 或 P 可以退出暂停（继续游戏）
     if (GetAsyncKeyState(VK_ESCAPE) & 0x8000) {
         g_state.gameMode = GameState::PLAYING;
         Sleep(150);
@@ -157,6 +150,7 @@ void UpdateGameOverInput() {
 
     if (GetAsyncKeyState('R') & 0x8000) {
         ResetGame();
+        g_state.gameMode = GameState::PLAYING;   // 关键修复：切换到游戏状态
         Sleep(150);
         return;
     }
@@ -194,10 +188,9 @@ void UpdateInput() {
     }
 
     if (g_state.gameMode == GameState::PLAYING) {
-        // 检测暂停键 P
         if (GetAsyncKeyState('P') & 0x8000) {
             g_state.gameMode = GameState::PAUSED;
-            g_state.pauseSelection = 0;   // 默认选中"继续"
+            g_state.pauseSelection = 0;
             Sleep(150);
             return;
         }
@@ -211,7 +204,6 @@ void UpdateInput() {
         g_state.spacePressed = isSpaceDown;
     }
 
-    // ESC 在游戏中也可以直接暂停（或返回菜单？为了统一，我们让 ESC 也暂停）
     if (GetAsyncKeyState(VK_ESCAPE) & 0x8000) {
         if (g_state.gameMode == GameState::PLAYING) {
             g_state.gameMode = GameState::PAUSED;
