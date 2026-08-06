@@ -12,17 +12,16 @@ void Update() {
     currentSpeed *= g_state.speedMultiplier;
     if (currentSpeed > g_config.MAX_SPEED) currentSpeed = g_config.MAX_SPEED;
 
-    static double currentTime = 0.0;
-    static LARGE_INTEGER lastTime = {0};
+    // ===== 修改：使用 g_state.currentTime 和 g_state.lastBoostTime =====
     LARGE_INTEGER now;
     QueryPerformanceCounter(&now);
-    if (lastTime.QuadPart != 0) {
-        double dt = (double)(now.QuadPart - lastTime.QuadPart) / (double)g_state.freq.QuadPart;
-        currentTime += dt;
+    if (g_state.lastBoostTime.QuadPart != 0) {
+        double dt = (double)(now.QuadPart - g_state.lastBoostTime.QuadPart) / (double)g_state.freq.QuadPart;
+        g_state.currentTime += dt;
     }
-    lastTime = now;
+    g_state.lastBoostTime = now;
 
-    if (g_config.ENABLE_BOOST && currentTime >= g_state.nextBoostTime) {
+    if (g_config.ENABLE_BOOST && g_state.currentTime >= g_state.nextBoostTime) {
         g_state.speedMultiplier *= g_config.BOOST_FACTOR;
         double tempSpeed = (g_config.BASE_SPEED + (g_config.ENABLE_LINEAR_SPEED ? g_state.score * g_config.SPEED_PER_SCORE : 0)) * g_state.speedMultiplier;
         if (tempSpeed > g_config.MAX_SPEED) {

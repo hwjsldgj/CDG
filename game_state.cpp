@@ -16,12 +16,14 @@ GameState::GameState()
     , screen(nullptr)
     , speedMultiplier(1.0)
     , nextBoostTime(0)
+    , currentTime(0.0)              // 新增初始化
     , isRecording(false)
     , isPlaying(false)
     , playbackIndex(0)
 {
     freq.QuadPart = 0;
     lastScoreTime.QuadPart = 0;
+    lastBoostTime.QuadPart = 0;     // 新增初始化
 }
 
 GameState g_state;
@@ -47,6 +49,11 @@ void ResetGame() {
     g_state.platforms.push_back(g_config.SCREEN_WIDTH - g_config.PLATFORM_WIDTH - g_config.INITIAL_PLATFORM_OFFSET);
     g_state.speedMultiplier = 1.0;
     g_state.nextBoostTime = g_config.INITIAL_BOOST_TIME;
+
+    // ===== 新增：重置物理时间状态 =====
+    g_state.currentTime = 0.0;
+    g_state.lastBoostTime.QuadPart = 0;
+
     QueryPerformanceCounter(&g_state.lastScoreTime);
     static LARGE_INTEGER lastTime = {0};
     lastTime.QuadPart = 0;
