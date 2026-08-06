@@ -10,9 +10,10 @@
 
 int main() {
     LoadConfig();
+    LoadHighScore();   // 加载持久化最高分
+
     g_state.dinoY = g_config.GROUND_Y;
     g_state.nextBoostTime = g_config.INITIAL_BOOST_TIME;
-    g_state.highScore = 0;
 
     srand((unsigned)time(nullptr));
     InitConsole();

@@ -7,7 +7,7 @@
 #include <windows.h>
 
 struct GameState {
-    enum GameMode { MENU, PLAYING, PAUSED, GAMEOVER } gameMode;  // 新增 PAUSED
+    enum GameMode { MENU, PLAYING, PAUSED, GAMEOVER } gameMode;
 
     bool gameOver;
     long long score;
@@ -29,16 +29,16 @@ struct GameState {
     double speedMultiplier;
     double nextBoostTime;
 
-    // 物理时间追踪
     double currentTime;
     LARGE_INTEGER lastBoostTime;
 
-    // 菜单
     int menuSelection;
     bool exitConfirm;
+    int pauseSelection;
 
-    // 暂停菜单
-    int pauseSelection;            // 0=继续, 1=重新开始, 2=返回主菜单
+    // 新增：时间记录
+    time_t startTime;         // 当前游戏开始时间
+    time_t highScoreTime;     // 最高分产生时间
 
     // 历史记录
     struct HistoryEntry {
@@ -61,7 +61,6 @@ struct GameState {
     bool isPlaying;
     size_t playbackIndex;
 
-    // 默认构造函数
     GameState();
 };
 
@@ -69,5 +68,7 @@ extern GameState g_state;
 
 void ResetGame();
 void UpdateHighScore();
+void LoadHighScore();
+void SaveHighScore();
 
 #endif
