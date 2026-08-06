@@ -56,9 +56,8 @@ void Game_Draw() {
     std::wstring scoreText = Utf8ToWide(g_config.scorePrefix) + std::to_wstring(g_state.score);
     std::wstring highText = Utf8ToWide(g_config.highscorePrefix) + std::to_wstring(g_state.highScore);
 
-    // 冒号列：原距右边缘6格，再左移2格 -> 距右边缘8格（即向右边缘减少2，所以数值减去2等于距右边缘8格）
-    // 即 colonCol = g_config.SCREEN_WIDTH - 8
-    int colonCol = g_config.SCREEN_WIDTH - 8;  // 左移2格
+    // 冒号列：原距右边缘6格，再左移2格 -> 距右边缘8格
+    int colonCol = g_config.SCREEN_WIDTH - 8;
 
     // 得分（第一行）
     size_t colonPos = scoreText.find(L'：');
@@ -106,12 +105,10 @@ void Game_HandleInput() {
         return;
     }
 
-    // 跳跃
-    if (!g_state.isJumping && g_state.dinoY >= g_config.GROUND_Y) {
-        if (isJumpKeyDown && !g_state.spacePressed) {
-            g_state.dinoVy = g_config.JUMP_VEL_MAX;
-            g_state.isJumping = true;
-        }
+    // 跳跃：按住键且在地面时立即起跳（连续跳跃）
+    if (!g_state.isJumping && g_state.dinoY >= g_config.GROUND_Y && isJumpKeyDown) {
+        g_state.dinoVy = g_config.JUMP_VEL_MAX;
+        g_state.isJumping = true;
     }
     g_state.spacePressed = isJumpKeyDown;
 }
